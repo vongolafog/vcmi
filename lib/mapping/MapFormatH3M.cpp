@@ -937,7 +937,12 @@ void CMapLoaderH3M::readPredefinedHeroes()
 			if (cannotGainXP)
 				logGlobal->warn("Map '%s': Option to prevent hero %d from receiveing experience is not implemented!", mapName, heroID);
 
-			if (level > 1)
+			if (level > LIBRARY->heroh->maxSupportedLevel())
+			{
+				if(auto * hero = map->tryGetFromHeroPool(HeroTypeID(heroID)))
+					hero->level = static_cast<ui32>(level);
+			}
+			else if (level > 1)
 				logGlobal->warn("Map '%s': Option to set level of hero %d to %d is not implemented!", mapName, heroID, level);
 		}
 	}
@@ -2512,7 +2517,9 @@ std::shared_ptr<CGObjectInstance> CMapLoaderH3M::readHero(const int3 & mapPositi
 		if (cannotGainXP)
 			logGlobal->warn("Map '%s': Option to prevent hero %d from receiveing experience is not implemented!", mapName, object->subID.num);
 
-		if (level > 1)
+		if (level > LIBRARY->heroh->maxSupportedLevel())
+			object->level = static_cast<ui32>(level);
+		else if (level > 1)
 			logGlobal->warn("Map '%s': Option to set level of hero %d to %d is not implemented!", mapName, object->subID.num, level);
 	}
 	return object;
