@@ -145,6 +145,13 @@ void writeLegacyTemplate(TinyH3MWriter & w, const LegacyTemplate & t)
 	w.writeUInt8(static_cast<uint8_t>(t.type));
 	w.writeUInt8(static_cast<uint8_t>(t.printPriority / 100));
 	w.skipZero(16);
+
+	if(features.levelHOTA5)
+	{
+		w.writeBool(true); // alwaysAddSkills
+		w.writeBool(false); // cannotGainXP
+		w.writeInt32(static_cast<int32_t>(obj.heroExplicitHotaLevel));
+	}
 }
 
 // Per-format field sizes. The HotA sub-version only matters for HOTA maps; every
@@ -265,6 +272,15 @@ TinyH3MBuilder & TinyH3MBuilder::heroExperience(uint32_t totalXp)
 	auto & spec = lastObject();
 	assert(spec.id == Obj::HERO || spec.id == Obj::RANDOM_HERO);
 	spec.heroExperienceXp = totalXp;
+	return *this;
+}
+
+TinyH3MBuilder & TinyH3MBuilder::heroHotaLevel(uint32_t level)
+{
+	auto & spec = lastObject();
+	assert(spec.id == Obj::HERO || spec.id == Obj::RANDOM_HERO);
+	assert(level > 0);
+	spec.heroExplicitHotaLevel = level;
 	return *this;
 }
 
@@ -632,8 +648,8 @@ uint32_t TinyH3MBuilder::registerTemplate(MapObjectID id, MapObjectSubID subid)
 
 std::vector<uint8_t> TinyH3MBuilder::build()
 {
-	if(format == EMapFormat::HOTA && hotaFormatVersion > 3)
-		throw std::runtime_error("TinyH3MBuilder: only HotA sub-format versions 0..3 are implemented");
+	if(format == EMapFormat::HOTA && hotaFormatVersion > 5)
+		throw std::runtime_error("TinyH3MBuilder: only HotA sub-format versions 0..5 are implemented");
 
 	TinyH3MWriter w;
 	auto features = featuresFor(format, hotaFormatVersion);
@@ -695,8 +711,11 @@ void TinyH3MBuilder::writeHeader(TinyH3MWriter & w) const
 		}
 		if(features.levelHOTA2)
 			w.writeUInt32(static_cast<uint32_t>(features.terrainsCount));
-		// levelHOTA5+ header blocks (town-types/difficulty mask, hire-defeated, ...)
-		// are not emitted: only HotA versions 0..3 are supported by the builder.
+		if(features.levelHOTA5)
+		{
+			w.writeUInt32(static_cast<uint32_t>(features.factionsCount));
+			w.writeUInt8(31); // all difficulty levels allowed
+		}
 	}
 
 	// areAnyPlayers must be false when no human/computer can play any color, otherwise
@@ -834,7 +853,11 @@ void TinyH3MBuilder::writeMapOptions(TinyH3MWriter & w) const
 		w.writeInt32(0);    // combinedArtifactsCount = none banned (no bitmask bytes follow)
 	if(features.levelHOTA3)
 		w.writeInt32(-1);   // roundLimit = no limit
-	// levelHOTA5+ per-player hero-recruitment block not emitted (versions 0..3 only).
+	if(features.levelHOTA5)
+	{
+		for(int i = 0; i < PlayerColor::PLAYER_LIMIT_I; ++i)
+			w.writeBool(false); // hero recruitment allowed
+	}
 }
 
 void TinyH3MBuilder::writeAllowedArtifacts(TinyH3MWriter & w) const
