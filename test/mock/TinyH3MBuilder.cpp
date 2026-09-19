@@ -145,13 +145,6 @@ void writeLegacyTemplate(TinyH3MWriter & w, const LegacyTemplate & t)
 	w.writeUInt8(static_cast<uint8_t>(t.type));
 	w.writeUInt8(static_cast<uint8_t>(t.printPriority / 100));
 	w.skipZero(16);
-
-	if(features.levelHOTA5)
-	{
-		w.writeBool(true); // alwaysAddSkills
-		w.writeBool(false); // cannotGainXP
-		w.writeInt32(static_cast<int32_t>(obj.heroExplicitHotaLevel));
-	}
 }
 
 // Per-format field sizes. The HotA sub-version only matters for HOTA maps; every
@@ -1205,6 +1198,13 @@ void TinyH3MBuilder::writeHeroBody(TinyH3MWriter & w, const ObjectSpec & obj) co
 		}
 	}
 	w.skipZero(16);
+
+	if(features.levelHOTA5)
+	{
+		w.writeBool(true); // alwaysAddSkills
+		w.writeBool(false); // cannotGainXP
+		w.writeInt32(static_cast<int32_t>(obj.heroExplicitHotaLevel));
+	}
 }
 
 void TinyH3MBuilder::writeScrollBody(TinyH3MWriter & w, const ObjectSpec & obj) const
