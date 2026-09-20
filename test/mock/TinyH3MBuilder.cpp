@@ -277,6 +277,22 @@ TinyH3MBuilder & TinyH3MBuilder::heroHotaLevel(uint32_t level)
 	return *this;
 }
 
+TinyH3MBuilder & TinyH3MBuilder::heroHotaAlwaysAddSkills(bool value)
+{
+	auto & spec = lastObject();
+	assert(spec.id == Obj::HERO || spec.id == Obj::RANDOM_HERO);
+	spec.heroHotaAlwaysAddSkills = value;
+	return *this;
+}
+
+TinyH3MBuilder & TinyH3MBuilder::heroHotaCannotGainXP(bool value)
+{
+	auto & spec = lastObject();
+	assert(spec.id == Obj::HERO || spec.id == Obj::RANDOM_HERO);
+	spec.heroHotaCannotGainXP = value;
+	return *this;
+}
+
 TinyH3MBuilder & TinyH3MBuilder::heroPrimary(uint8_t attack, uint8_t defense, uint8_t spellPower, uint8_t knowledge)
 {
 	auto & spec = lastObject();
@@ -1201,8 +1217,8 @@ void TinyH3MBuilder::writeHeroBody(TinyH3MWriter & w, const ObjectSpec & obj) co
 
 	if(features.levelHOTA5)
 	{
-		w.writeBool(true); // alwaysAddSkills
-		w.writeBool(false); // cannotGainXP
+		w.writeBool(obj.heroHotaAlwaysAddSkills);
+		w.writeBool(obj.heroHotaCannotGainXP);
 		w.writeInt32(static_cast<int32_t>(obj.heroExplicitHotaLevel));
 	}
 }
