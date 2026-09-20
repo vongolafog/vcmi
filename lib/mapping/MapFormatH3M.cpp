@@ -926,25 +926,39 @@ void CMapLoaderH3M::readPredefinedHeroes()
 	{
 		for(int heroID = 0; heroID < heroesCount; heroID++)
 		{
-			bool alwaysAddSkills = reader->readBool(); // prevent heroes from receiving additional random secondary skills at the start of the map if they are not of the first level
-			bool cannotGainXP = reader->readBool();
-			int32_t level = reader->readInt32(); // Needs investigation how this interacts with usual setting of level via experience
+			const bool alwaysAddSkills = reader->readBool();
+			const bool cannotGainXP = reader->readBool();
+			const int32_t level = reader->readInt32();
 			assert(level > 0);
 
-			if (!alwaysAddSkills)
-				logGlobal->warn("Map '%s': Option to prevent hero %d from gaining skills on map start is not implemented!", mapName, heroID);
+			auto * hero = map->tryGetFromHeroPool(HeroTypeID(heroID));
 
-			if (cannotGainXP)
-				logGlobal->warn("Map '%s': Option to prevent hero %d from receiveing experience is not implemented!", mapName, heroID);
-
-			// Experience thresholds above this level can not be represented by VCMI.
-			if (level > LIBRARY->heroh->maxSupportedLevel())
+			// HotA stores these options independently from the legacy customized
+			// hero block. Create a pool entry when the extension carries runtime
+			// state that would otherwise be lost.
+			if(!hero && (level > 1 || cannotGainXP))
 			{
-				if(auto * hero = map->tryGetFromHeroPool(HeroTypeID(heroID)))
-					hero->level = static_cast<ui32>(level);
+				const auto heroType = HeroTypeID(heroID);
+				auto handler = LIBRARY->objtypeh->getHandlerFor(
+					Obj::HERO,
+					heroType.toHeroType()->heroClass->getIndex());
+				auto object = handler->create(map->cb, handler->getTemplates().front());
+				auto heroObject = std::dynamic_pointer_cast<CGHeroInstance>(object);
+				heroObject->subID = heroID;
+				map->addToHeroPool(heroObject);
+				hero = heroObject.get();
 			}
-			else if (level > 1)
-				logGlobal->warn("Map '%s': Option to set level of hero %d to %d is not implemented!", mapName, heroID, level);
+
+			if(hero)
+			{
+				hero->mapSpecifiedLevel = static_cast<ui32>(level);
+				hero->mapSpecifiedLevelAddsSkills = alwaysAddSkills;
+				hero->cannotGainExperience = cannotGainXP;
+
+				// Keep the parsed map representation faithful before game-state
+				// initialization. initHero() will rebuild skill rolls from level 1.
+				hero->level = static_cast<ui32>(level);
+			}
 		}
 	}
 }
@@ -2507,22 +2521,18 @@ std::shared_ptr<CGObjectInstance> CMapLoaderH3M::readHero(const int3 & mapPositi
 
 	if(features.levelHOTA5)
 	{
-		bool alwaysAddSkills = reader->readBool(); // prevent heroes from receiving additional random secondary skills at the start of the map if they are not of the first level
-		bool cannotGainXP = reader->readBool();
-		int32_t level = reader->readInt32(); // Needs investigation how this interacts with usual setting of level via experience
+		const bool alwaysAddSkills = reader->readBool();
+		const bool cannotGainXP = reader->readBool();
+		const int32_t level = reader->readInt32();
 		assert(level > 0);
 
-		if (!alwaysAddSkills)
-			logGlobal->warn("Map '%s': Option to prevent hero %d from gaining skills on map start is not implemented!", mapName, object->subID.num);
+		object->mapSpecifiedLevel = static_cast<ui32>(level);
+		object->mapSpecifiedLevelAddsSkills = alwaysAddSkills;
+		object->cannotGainExperience = cannotGainXP;
 
-		if (cannotGainXP)
-			logGlobal->warn("Map '%s': Option to prevent hero %d from receiveing experience is not implemented!", mapName, object->subID.num);
-
-		// Experience thresholds above this level can not be represented by VCMI.
-		if (level > LIBRARY->heroh->maxSupportedLevel())
-			object->level = static_cast<ui32>(level);
-		else if (level > 1)
-			logGlobal->warn("Map '%s': Option to set level of hero %d to %d is not implemented!", mapName, object->subID.num, level);
+		// Preserve HotA's exact authored level without deriving it from the
+		// experience table. This also covers the H3 overflow range (75-195).
+		object->level = static_cast<ui32>(level);
 	}
 	return object;
 }
