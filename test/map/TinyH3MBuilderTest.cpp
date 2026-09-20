@@ -14,8 +14,6 @@
 
 #include "../../lib/callback/EditorCallback.h"
 #include "../../lib/entities/artifact/CArtifactInstance.h"
-#include "../../lib/entities/hero/CHeroHandler.h"
-#include "../../lib/GameLibrary.h"
 #include "../../lib/filesystem/CMemoryBuffer.h"
 #include "../../lib/mapObjects/CGHeroInstance.h"
 #include "../../lib/mapObjects/Quest.h"
