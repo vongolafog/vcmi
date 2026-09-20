@@ -433,7 +433,11 @@ void CGHeroInstance::initHero(IGameRandomizer & gameRandomizer, bool isFake)
 	if (patrol.patrolling)
 		patrol.initialPos = visitablePos();
 
-	if(exp == UNINITIALIZED_EXPERIENCE)
+	if(mapSpecifiedLevel.has_value())
+	{
+		initializeMapSpecifiedLevel(gameRandomizer);
+	}
+	else if(exp == UNINITIALIZED_EXPERIENCE)
 	{
 		initExp(gameRandomizer.getDefault());
 	}
@@ -786,8 +790,7 @@ ui64 CGHeroInstance::getTotalStrength() const
 
 TExpType CGHeroInstance::calculateXp(TExpType exp) const
 {
-	// Explicit levels above the experience table are fixed and cannot advance further.
-	if(level > LIBRARY->heroh->maxSupportedLevel())
+	if(cannotGainExperience)
 		return 0;
 
 	return static_cast<TExpType>(exp * (valOfBonuses(BonusType::HERO_EXPERIENCE_GAIN_PERCENT)) / 100.0);
@@ -1439,8 +1442,7 @@ void CGHeroInstance::setPrimarySkill(PrimarySkill primarySkill, si64 value, Chan
 
 void CGHeroInstance::setExperience(si64 value, ChangeValueMode mode)
 {
-	// Explicit levels above the experience table are fixed and cannot advance further.
-	if(level > LIBRARY->heroh->maxSupportedLevel() && mode == ChangeValueMode::RELATIVE && value > 0)
+	if(cannotGainExperience && mode == ChangeValueMode::RELATIVE && value > 0)
 		return;
 
 	if(mode == ChangeValueMode::ABSOLUTE)
@@ -1484,6 +1486,55 @@ void CGHeroInstance::levelUpAutomatically(IGameRandomizer & gameRandomizer)
 
 		levelUp();
 	}
+}
+
+void CGHeroInstance::initializeMapSpecifiedLevel(IGameRandomizer & gameRandomizer)
+{
+	assert(mapSpecifiedLevel.has_value());
+	assert(*mapSpecifiedLevel > 0);
+
+	const ui32 targetLevel = *mapSpecifiedLevel;
+	const bool addSkills = mapSpecifiedLevelAddsSkills;
+
+	// These two fields describe map-start initialization only. Consume them so
+	// later hero initialization paths cannot apply the authored level twice.
+	mapSpecifiedLevel.reset();
+	mapSpecifiedLevelAddsSkills = true;
+
+	// HotA's explicit level is authoritative and independent from the H3
+	// experience counter. Rebuild the level from 1 so optional map-start skill
+	// rolls happen exactly targetLevel - 1 times.
+	level = 1;
+
+	if(addSkills)
+	{
+		while(level < targetLevel)
+		{
+			const auto primarySkill = gameRandomizer.rollPrimarySkillForLevelup(this);
+			const auto proposedSecondarySkills = gameRandomizer.rollSecondarySkills(this);
+
+			setPrimarySkill(primarySkill, 1, ChangeValueMode::RELATIVE);
+			if(!proposedSecondarySkills.empty())
+				setSecSkillLevel(proposedSecondarySkills.front(), 1, ChangeValueMode::RELATIVE);
+
+			levelUp();
+		}
+	}
+	else
+	{
+		level = targetLevel;
+		nodeHasChanged();
+	}
+
+	// For levels representable by VCMI keep experience coherent with the exact
+	// level so normal future progression starts from the correct threshold.
+	// Above that range there is no representable threshold; preserve map XP if
+	// present, otherwise start the counter at zero. XP locking is controlled
+	// solely by the independent cannotGainExperience flag.
+	if(targetLevel <= LIBRARY->heroh->maxSupportedLevel())
+		exp = LIBRARY->heroh->reqExp(targetLevel);
+	else if(exp == UNINITIALIZED_EXPERIENCE)
+		exp = 0;
 }
 
 bool CGHeroInstance::hasVisions(const CGObjectInstance * target, BonusSubtypeID subtype) const
