@@ -77,6 +77,13 @@ private:
 	ui32 movement; //remaining movement points
 	bool inTownGarrison; // if hero is in town garrison
 
+	// HotA map-authored hero initialization options. The level/skill flags are
+	// consumed exactly once by initHero(); cannotGainExperience is runtime state
+	// and is serialized so the restriction survives save/load.
+	std::optional<ui32> mapSpecifiedLevel;
+	bool mapSpecifiedLevelAddsSkills;
+	bool cannotGainExperience;
+
 	IGameInfoCallback * getCallback() const final { return cb; }
 
 public:
@@ -336,6 +343,7 @@ protected:
 
 private:
 	void levelUpAutomatically(IGameRandomizer & gameRandomizer);
+	void initializeMapSpecifiedLevel(IGameRandomizer & gameRandomizer);
 	void attachCommanderToArmy();
 
 public:
@@ -369,6 +377,11 @@ public:
 
 		h & commander;
 		h & visitedObjects;
+
+		if(h.hasFeature(Handler::Version::HOTA_HERO_LEVEL_OPTIONS))
+			h & cannotGainExperience;
+		else if(!h.saving)
+			cannotGainExperience = false;
 
 		if(!h.saving && h.loadingGamestate)
 			attachCommanderToArmy();
