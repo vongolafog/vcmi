@@ -151,6 +151,12 @@ public:
 	/// HotA 1.7.0+ explicit hero level stored in the HotA5 hero extension.
 	TinyH3MBuilder & heroHotaLevel(uint32_t level);
 
+	/// Whether HotA should roll primary/secondary skills while applying the explicit start level.
+	TinyH3MBuilder & heroHotaAlwaysAddSkills(bool value);
+
+	/// HotA per-hero flag that prevents all future positive experience gain.
+	TinyH3MBuilder & heroHotaCannotGainXP(bool value);
+
 	/// Per-skill primary stat overrides (attack, defense, spell power, knowledge).
 	TinyH3MBuilder & heroPrimary(uint8_t attack, uint8_t defense, uint8_t spellPower, uint8_t knowledge);
 
@@ -292,6 +298,8 @@ private:
 		std::vector<std::pair<CreatureID, uint16_t>>           heroGarrisonStacks;
 		std::optional<uint32_t>                                heroExperienceXp;
 		uint32_t                                               heroExplicitHotaLevel = 1;
+		bool                                                   heroHotaAlwaysAddSkills = true;
+		bool                                                   heroHotaCannotGainXP = false;
 		std::optional<std::array<uint8_t, 4>>                  heroPrimarySkills;
 		std::vector<std::pair<SecondarySkill, uint8_t>>        heroSecondarySkills;
 		std::optional<std::vector<SpellID>>                    heroSpells;
