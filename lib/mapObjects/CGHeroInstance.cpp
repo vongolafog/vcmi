@@ -1531,7 +1531,9 @@ void CGHeroInstance::initializeMapSpecifiedLevel(IGameRandomizer & gameRandomize
 	// Above that range there is no representable threshold; preserve map XP if
 	// present, otherwise start the counter at zero. XP locking is controlled
 	// solely by the independent cannotGainExperience flag.
-	if(targetLevel <= LIBRARY->heroh->maxSupportedLevel())
+	if(cannotGainExperience)
+		exp = 0;
+	else if(targetLevel <= LIBRARY->heroh->maxSupportedLevel())
 		exp = LIBRARY->heroh->reqExp(targetLevel);
 	else if(exp == UNINITIALIZED_EXPERIENCE)
 		exp = 0;
