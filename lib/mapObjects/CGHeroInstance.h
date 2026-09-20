@@ -81,8 +81,8 @@ private:
 	// consumed exactly once by initHero(); cannotGainExperience is runtime state
 	// and is serialized so the restriction survives save/load.
 	std::optional<ui32> mapSpecifiedLevel;
-	bool mapSpecifiedLevelAddsSkills;
-	bool cannotGainExperience;
+	bool mapSpecifiedLevelAddsSkills = true;
+	bool cannotGainExperience = false;
 
 	IGameInfoCallback * getCallback() const final { return cb; }
 
