@@ -1,0 +1,81 @@
+name: Private HotA Boss Windows Build
+
+on:
+  push:
+    branches:
+      - private-hota-boss-snapshot-fix
+  workflow_dispatch:
+
+jobs:
+  windows-x64:
+    name: Windows x64 private build
+    runs-on: windows-2025-vs2026
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Detect Visual Studio version
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsInstallationVersion = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationVersion
+          $vsMajor = ($vsInstallationVersion -split '\.')[0]
+          echo "MSBUILD_VS_VERSION=$vsMajor" >> $env:GITHUB_ENV
+
+      - name: Install MSVC v142 toolset
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installPath = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
+          $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
+          & $installer modify --installPath "$installPath" --add Microsoft.VisualStudio.Component.VC.v142.x86.x64 --quiet --norestart
+
+      - name: Install Conan dependencies
+        run: |
+          pipx install conan
+          source "${GITHUB_WORKSPACE}/CI/install_conan_dependencies.sh" dependencies-windows-x64
+
+      - name: Setup MSVC developer command prompt
+        uses: step-security/msvc-dev-cmd@main
+        with:
+          arch: x64
+          toolset: '14.29'
+
+      - name: Install Conan profile
+        run: |
+          conan profile detect
+          conan install . \
+            --output-folder=conan-generated \
+            --build=never \
+            --profile=dependencies/conan_profiles/msvc-x64 \
+            --conf="tools.cmake.cmaketoolchain:generator=Ninja" \
+            -s "&:build_type=RelWithDebInfo" \
+            -o "&:target_pre_windows10=True" \
+            --conf="tools.microsoft.msbuild:vs_version=${MSBUILD_VS_VERSION}"
+
+      - name: Add Conan runtime dependencies to PATH
+        run: sed 's#/[^/]*$##' conan-generated/_runtime_libs.txt | sort -u >> "$GITHUB_PATH"
+
+      - name: Configure
+        run: cmake --preset windows-msvc-ninja-release
+
+      - name: Build
+        run: cmake --build --preset windows-msvc-ninja-release
+
+      - name: Package
+        run: |
+          cd "${GITHUB_WORKSPACE}/out/build/windows-msvc-ninja-release"
+          cpack -C RelWithDebInfo
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v7
+        with:
+          name: VCMI-private-HotA-boss-Windows-x64
+          path: out/build/windows-msvc-ninja-release/*.zip
