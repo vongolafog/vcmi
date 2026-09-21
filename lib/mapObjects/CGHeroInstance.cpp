@@ -1501,9 +1501,24 @@ void CGHeroInstance::initializeMapSpecifiedLevel(IGameRandomizer & gameRandomize
 	mapSpecifiedLevel.reset();
 	mapSpecifiedLevelAddsSkills = true;
 
-	// HotA's explicit level is authoritative and independent from the H3
-	// experience counter. Rebuild the level from 1 so optional map-start skill
-	// rolls happen exactly targetLevel - 1 times.
+	// A HotA hero with cannotGainXP is a map-authored final snapshot. Preserve
+	// its exact level, primary skills and secondary skills as loaded. In
+	// particular, alwaysAddSkills must not replay normal level-up rolls here.
+	if(cannotGainExperience)
+	{
+		level = targetLevel;
+		nodeHasChanged();
+
+		// The flag prevents future positive experience gain. Do not erase an
+		// authored experience value, because other engine systems may still read it.
+		if(exp == UNINITIALIZED_EXPERIENCE)
+			exp = 0;
+		return;
+	}
+
+	// Heroes that may still gain experience retain the existing explicit-level
+	// initialization behavior until alwaysAddSkills semantics are verified
+	// independently.
 	level = 1;
 
 	if(addSkills)
@@ -1529,11 +1544,8 @@ void CGHeroInstance::initializeMapSpecifiedLevel(IGameRandomizer & gameRandomize
 	// For levels representable by VCMI keep experience coherent with the exact
 	// level so normal future progression starts from the correct threshold.
 	// Above that range there is no representable threshold; preserve map XP if
-	// present, otherwise start the counter at zero. XP locking is controlled
-	// solely by the independent cannotGainExperience flag.
-	if(cannotGainExperience)
-		exp = 0;
-	else if(targetLevel <= LIBRARY->heroh->maxSupportedLevel())
+	// present, otherwise start the counter at zero.
+	if(targetLevel <= LIBRARY->heroh->maxSupportedLevel())
 		exp = LIBRARY->heroh->reqExp(targetLevel);
 	else if(exp == UNINITIALIZED_EXPERIENCE)
 		exp = 0;
