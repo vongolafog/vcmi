@@ -65,8 +65,8 @@ steps:
 # Cache ccache
 - task: Cache@2
   inputs:
-    key: 'ccache | "$(Agent.OS)" | nullkiller2-v0.12'
-    path: $(HOME)/.ccache
+    key: '"ccache" | "$(Agent.OS)" | "nullkiller2-v0.12"'
+    path: $(USERPROFILE)\.ccache
   displayName: Cache compiler
 
 
