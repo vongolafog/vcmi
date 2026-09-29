@@ -67,14 +67,29 @@ steps:
 # 5. Build
 - powershell: |
 
-    cmake --preset windows-msvc-ninja-release
+    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+
+    $vsPath = (& $vswhere -latest -products * -property installationPath).Trim()
+
+    if (-not $vsPath) {
+        throw "Visual Studio not found"
+    }
+
+
+    cmd.exe /c "`"$vsPath\Common7\Tools\VsDevCmd.bat`" -arch=x64 && cmake --preset windows-msvc-ninja-release"
 
     if ($LASTEXITCODE -ne 0) {
         throw "CMake configure failed"
     }
 
 
-    cmake --build --preset windows-msvc-ninja-release
+    cmd.exe /c "`"$vsPath\Common7\Tools\VsDevCmd.bat`" -arch=x64 && cmake --build --preset windows-msvc-ninja-release"
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "VCMI build failed"
+    }
+
+  displayName: Build VCMI
 
     if ($LASTEXITCODE -ne 0) {
         throw "VCMI build failed"
