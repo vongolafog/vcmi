@@ -62,10 +62,6 @@ steps:
   displayName: Checkout exact VCMI snapshot
 
 - powershell: |
-    python apply_battleai_target_attraction.py
-  displayName: Apply BattleAI v0.10 patch
-
-- powershell: |
     $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
     $vsPath = (& $vswhere -latest -products * -property installationPath).Trim()
 
@@ -117,45 +113,37 @@ steps:
     if errorlevel 1 exit /b 1
     cmake -S . -B "$repo\build" -G Ninja -DCMAKE_TOOLCHAIN_FILE="$repo\source\conan-msvc\conan_toolchain.cmake" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_CCACHE=OFF -DENABLE_TEST=OFF -DENABLE_PCH=OFF
     if errorlevel 1 exit /b 1
-    cmake --build "$repo\build" --target BattleAI --parallel 2
+    cmake --build "$repo\build" --parallel 2
     exit /b %errorlevel%
     "@
 
     Set-Content -Path build_battleai.cmd -Value $script -Encoding ascii
     cmd.exe /d /c build_battleai.cmd
     if ($LASTEXITCODE -ne 0) {
-      throw "BattleAI build failed with exit code $LASTEXITCODE"
+      throw "VCMI build failed with exit code $LASTEXITCODE"
     }
-  displayName: Configure and build BattleAI
+  displayName: Configure and build VCMI
 
 - powershell: |
-    New-Item -ItemType Directory -Force -Path "$(Build.ArtifactStagingDirectory)\BattleAI" | Out-Null
+    New-Item -ItemType Directory -Force -Path "$(Build.ArtifactStagingDirectory)\VCMI" | Out-Null
 
-    $dll = Get-ChildItem -Path build -Filter BattleAI.dll -Recurse | Select-Object -First 1
-    if (-not $dll) { throw "BattleAI.dll not found" }
+    $files = Get-ChildItem -Path build -Recurse -File |
+      Where-Object { $_.Extension -eq ".dll" -or $_.Extension -eq ".exe" }
 
-    Copy-Item $dll.FullName "$(Build.ArtifactStagingDirectory)\BattleAI\BattleAI.dll"
-
-    $vsPath = (Get-Content .vs_install_path -Raw).Trim()
-    $verify = @"
-    @echo off
-    call "$vsPath\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
-    dumpbin /exports "$(Build.ArtifactStagingDirectory)\BattleAI\BattleAI.dll" | findstr /C:"GetNewBattleAI"
-    exit /b %errorlevel%
-    "@
-
-    Set-Content -Path verify_battleai.cmd -Value $verify -Encoding ascii
-    cmd.exe /d /c verify_battleai.cmd
-    if ($LASTEXITCODE -ne 0) {
-      throw "Required GetNewBattleAI export is missing"
+    if (-not $files) {
+      throw "No build output files found"
     }
 
-    Get-Item "$(Build.ArtifactStagingDirectory)\BattleAI\BattleAI.dll" |
-      Format-List FullName,Length,LastWriteTime
-  displayName: Collect and verify BattleAI.dll
+    foreach ($file in $files) {
+      Copy-Item $file.FullName "$(Build.ArtifactStagingDirectory)\VCMI\" -Force
+    }
+
+    Get-ChildItem "$(Build.ArtifactStagingDirectory)\VCMI" |
+      Format-List Name,Length,LastWriteTime
+  displayName: Collect VCMI build artifacts
 
 - task: PublishPipelineArtifact@1
   inputs:
-    targetPath: '$(Build.ArtifactStagingDirectory)\BattleAI'
-    artifact: 'BattleAI-d8f71f5d-v04-core-fixes-v010'
-  displayName: Publish BattleAI artifact
+    targetPath: '$(Build.ArtifactStagingDirectory)\VCMI'
+    artifact: 'Nullkiller2-v0.12-alpha1-build'
+  displayName: Publish Nullkiller2 build artifact
