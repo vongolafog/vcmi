@@ -52,6 +52,7 @@ steps:
       --build=never `
       --profile=dependencies/conan_profiles/msvc-x64 `
       --conf="tools.cmake.cmaketoolchain:generator=Ninja" `
+      --conf="tools.microsoft.msbuild:vs_version=17" `
       -s "&:build_type=RelWithDebInfo" `
       -o "&:target_pre_windows10=True"
 
