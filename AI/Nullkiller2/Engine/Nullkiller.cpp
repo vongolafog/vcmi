@@ -63,6 +63,7 @@ Nullkiller::Nullkiller()
 	, scanDepth(ScanDepth::MAIN_FULL)
 	, useHeroChain(true)
 	, memory(std::make_unique<AIMemory>())
+	, strategicPlanner(std::make_unique<StrategicPlanner>(this))
 {
 
 }
@@ -590,6 +591,12 @@ void Nullkiller::makeTurn()
 	pathfinderTurnStorageMisses.store(0);
 	const int MAX_DEPTH = 10;
 	resetState();
+
+	if(strategicPlanner)
+	{
+		strategicPlanner->update();
+	}
+
 	Goals::TGoalVec tasks;
 	tracePlayerStatus(true);
 

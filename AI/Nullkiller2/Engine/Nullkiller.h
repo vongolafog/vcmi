@@ -13,6 +13,7 @@
 #include "FuzzyHelper.h"
 #include "Settings.h"
 #include "AIMemory.h"
+#include "../Strategic/StrategicPlanner.h"
 #include "DeepDecomposer.h"
 #include "../Analyzers/DangerHitMapAnalyzer.h"
 #include "../Analyzers/BuildAnalyzer.h"
@@ -106,6 +107,7 @@ public:
 	std::unique_ptr<HeroManager> heroManager;
 	std::unique_ptr<ArmyManager> armyManager;
 	std::unique_ptr<AIMemory> memory;
+	std::unique_ptr<StrategicPlanner> strategicPlanner;
 	std::unique_ptr<FuzzyHelper> dangerEvaluator;
 	std::unique_ptr<DeepDecomposer> decomposer;
 	std::unique_ptr<ArmyFormation> armyFormation;
