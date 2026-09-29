@@ -1,7 +1,5 @@
 #pragma once
 
-#include "InstanceID.h"
-
 namespace NK2AI
 {
 
@@ -17,7 +15,7 @@ public:
 	};
 
 	Type type = Type::NONE;
-	ObjectInstanceID target;
+	int target = -1;
 	bool active = false;
 };
 
