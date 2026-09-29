@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../lib/Types.h"
+#include "../../../lib/Types.h"
 
 namespace NK2AI
 {
