@@ -4,11 +4,6 @@ pr: none
 pool:
   vmImage: windows-latest
 
-variables:
-  VCMI_COMMIT: d8f71f5d41f98cc062fa0d628e696e3552b04012
-  MOD_PASSWORD: "sodpWz4LMb0vzXbt/g=="
-  MOD_PASSWORD_MASK: "f3f4017d7f6653d85dff46dfcb455a79"
-
 steps:
 - checkout: self
   clean: true
@@ -19,131 +14,63 @@ steps:
     python --version
 
     $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-    if (-not (Test-Path $vswhere)) {
-      throw "vswhere.exe not found"
-    }
+    if (-not (Test-Path $vswhere)) { throw "vswhere.exe not found" }
 
     $vsPath = (& $vswhere -latest -products * -property installationPath).Trim()
-    if (-not $vsPath) {
-      throw "Visual Studio installation not found"
-    }
+    if (-not $vsPath) { throw "Visual Studio installation not found" }
 
     $cmake = Join-Path $vsPath "Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
     $ninja = Join-Path $vsPath "Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe"
 
-    if (-not (Test-Path $cmake)) { throw "cmake.exe not found: $cmake" }
-    if (-not (Test-Path $ninja)) { throw "ninja.exe not found: $ninja" }
-
-    & $cmake --version
-    & $ninja --version
+    if (-not (Test-Path $cmake)) { throw "cmake.exe not found" }
+    if (-not (Test-Path $ninja)) { throw "ninja.exe not found" }
 
     Set-Content -Path .vs_install_path -Value $vsPath -Encoding ascii
   displayName: Check Windows toolchain
 
 - powershell: |
-    New-Item -ItemType Directory -Force -Path source | Out-Null
-    Set-Location source
-
-    git init
-    git remote add origin https://github.com/vcmi/vcmi.git
-    git -c protocol.version=2 fetch --no-tags --depth=1 origin $(VCMI_COMMIT)
-    if ($LASTEXITCODE -ne 0) { throw "Failed to fetch exact VCMI commit" }
-
-    git checkout --detach FETCH_HEAD
-    if ($LASTEXITCODE -ne 0) { throw "Failed to checkout exact VCMI snapshot" }
-
-    $head = (git rev-parse HEAD).Trim()
-    Write-Host "VCMI HEAD: $head"
-    if ($head -ne "$(VCMI_COMMIT)") { throw "Unexpected VCMI revision: $head" }
-
-    git submodule sync --recursive
-    git submodule update --init --recursive
-    if ($LASTEXITCODE -ne 0) { throw "VCMI submodule checkout failed" }
-  displayName: Checkout exact VCMI snapshot
-
-- powershell: |
-    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-    $vsPath = (& $vswhere -latest -products * -property installationPath).Trim()
-
-    $toolset = Get-ChildItem "$vsPath\VC\Tools\MSVC" -Directory -ErrorAction SilentlyContinue |
-      Where-Object { $_.Name -like "14.29*" } |
-      Select-Object -First 1
-
-    if (-not $toolset) {
-      Write-Host "MSVC 14.29 not preinstalled; using available Visual Studio toolset."
-    } else {
-      Write-Host "Found MSVC toolset $($toolset.Name)"
-    }
-
-    Set-Content -Path .vs_install_path -Value $vsPath -Encoding ascii
-  displayName: Detect MSVC toolset
-
-- powershell: |
     python -m pip install --upgrade "conan>=2,<3"
-    conan --version
     conan profile detect --force
   displayName: Install Conan 2
 
 - powershell: |
-    Set-Location source
     bash CI/install_conan_dependencies.sh dependencies-windows-x64
+    if ($LASTEXITCODE -ne 0) { throw "Dependency install failed" }
   displayName: Install VCMI dependencies
 
 - powershell: |
     $repo = (Get-Location).Path
     $vsPath = (Get-Content .vs_install_path -Raw).Trim()
-    $cmakeBin = "$vsPath\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin"
-    $ninjaBin = "$vsPath\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja"
-
-    $toolset = Get-ChildItem "$vsPath\VC\Tools\MSVC" -Directory -ErrorAction SilentlyContinue |
-      Where-Object { $_.Name -like "14.29*" } |
-      Select-Object -First 1
-
-    $vcvars = if ($toolset) { " -vcvars_ver=14.29" } else { "" }
 
     $script = @"
-    @echo off
-    call "$vsPath\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64$vcvars
-    if errorlevel 1 exit /b 1
-    set "PATH=$cmakeBin;$ninjaBin;%PATH%"
-    cd /d "$repo\source"
-    conan install . --output-folder=conan-msvc --build=never --profile=dependencies\conan_profiles\msvc-x64 -s "&:build_type=RelWithDebInfo" -c tools.cmake.cmaketoolchain:generator=Ninja -c tools.microsoft.msbuild:vs_version=17 -o "&:target_pre_windows10=True"
-    if errorlevel 1 exit /b 1
-    call conan-msvc\conanrun.bat
-    if errorlevel 1 exit /b 1
-    cmake -S . -B "$repo\build" -G Ninja -DCMAKE_TOOLCHAIN_FILE="$repo\source\conan-msvc\conan_toolchain.cmake" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_CCACHE=OFF -DENABLE_TEST=OFF -DENABLE_PCH=OFF
-    if errorlevel 1 exit /b 1
-    cmake --build "$repo\build" --parallel 2
-    exit /b %errorlevel%
-    "@
+@echo off
+call "$vsPath\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+if errorlevel 1 exit /b 1
 
-    Set-Content -Path build_battleai.cmd -Value $script -Encoding ascii
-    cmd.exe /d /c build_battleai.cmd
-    if ($LASTEXITCODE -ne 0) {
-      throw "VCMI build failed with exit code $LASTEXITCODE"
-    }
+cd /d "$repo"
+
+conan install . --output-folder=conan-msvc --build=never --profile=dependencies\conan_profiles\msvc-x64 -s "&:build_type=RelWithDebInfo" -c tools.cmake.cmaketoolchain:generator=Ninja -c tools.microsoft.msbuild:vs_version=17 -o "&:target_pre_windows10=True"
+
+if errorlevel 1 exit /b 1
+
+call conan-msvc\conanrun.bat
+if errorlevel 1 exit /b 1
+
+cmake -S "$repo" -B "$repo\build" -G Ninja -DCMAKE_TOOLCHAIN_FILE="$repo\conan-msvc\conan_toolchain.cmake" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_CCACHE=OFF -DENABLE_TEST=OFF -DENABLE_PCH=OFF
+
+if errorlevel 1 exit /b 1
+
+cmake --build "$repo\build" --parallel 2
+"@
+
+    Set-Content build_vcmi.cmd $script -Encoding ascii
+    cmd.exe /d /c build_vcmi.cmd
+
+    if ($LASTEXITCODE -ne 0) { throw "VCMI build failed" }
   displayName: Configure and build VCMI
-
-- powershell: |
-    New-Item -ItemType Directory -Force -Path "$(Build.ArtifactStagingDirectory)\VCMI" | Out-Null
-
-    $files = Get-ChildItem -Path build -Recurse -File |
-      Where-Object { $_.Extension -eq ".dll" -or $_.Extension -eq ".exe" }
-
-    if (-not $files) {
-      throw "No build output files found"
-    }
-
-    foreach ($file in $files) {
-      Copy-Item $file.FullName "$(Build.ArtifactStagingDirectory)\VCMI\" -Force
-    }
-
-    Get-ChildItem "$(Build.ArtifactStagingDirectory)\VCMI" |
-      Format-List Name,Length,LastWriteTime
-  displayName: Collect VCMI build artifacts
 
 - task: PublishPipelineArtifact@1
   inputs:
-    targetPath: '$(Build.ArtifactStagingDirectory)\VCMI'
+    targetPath: '$(Build.SourcesDirectory)/build'
     artifact: 'Nullkiller2-v0.12-alpha1-build'
-  displayName: Publish Nullkiller2 build artifact
+  displayName: Publish build artifact
