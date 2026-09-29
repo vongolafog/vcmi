@@ -1,3 +1,67 @@
+trigger: none
+pr: none
+
+pool:
+  vmImage: windows-latest
+
+steps:
+- checkout: self
+  clean: true
+  fetchDepth: 1
+
+- powershell: |
+    git --version
+    python --version
+
+    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+    if (-not (Test-Path $vswhere)) {
+      throw "vswhere.exe not found"
+    }
+
+    $vsPath = (& $vswhere -latest -products * -property installationPath).Trim()
+    if (-not $vsPath) {
+      throw "Visual Studio installation not found"
+    }
+
+    $cmake = Join-Path $vsPath "Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
+    $ninja = Join-Path $vsPath "Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe"
+
+    if (-not (Test-Path $cmake)) {
+      throw "cmake.exe not found"
+    }
+
+    if (-not (Test-Path $ninja)) {
+      throw "ninja.exe not found"
+    }
+
+    Set-Content -Path .vs_install_path -Value $vsPath -Encoding ascii
+  displayName: Check Windows toolchain
+
+- powershell: |
+    python -m pip install --upgrade "conan>=2,<3"
+    conan --version
+    conan profile detect --force
+  displayName: Install Conan 2
+
+- powershell: |
+    bash CI/install_conan_dependencies.sh dependencies-windows-x64
+
+    if ($LASTEXITCODE -ne 0) {
+      throw "Dependency install failed"
+    }
+  displayName: Install VCMI dependencies
+
+- powershell: |
+    $repo = (Get-Location).Path
+    $vsPath = (Get-Content .vs_install_path -Raw).Trim()
+
+    $cmake = "$vsPath\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
+    $ninja = "$vsPath\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja"
+
+    $env:Path = "$ninja;$cmake;$env:Path"
+
+    conan install . `
+      --output-folder=conan-msvc `
       --build=never `
       --profile=dependencies\conan_profiles\msvc-x64 `
       -s "&:build_type=RelWithDebInfo" `
