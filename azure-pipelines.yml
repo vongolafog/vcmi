@@ -63,7 +63,7 @@ steps:
     conan install . `
       --output-folder=conan-msvc `
       --build=never `
-      --profile=dependencies\conan_profiles\msvc-x64 `
+      --profile=dependencies\conan_profiles\windows-x64 `
       -s "&:build_type=RelWithDebInfo" `
       -c tools.cmake.cmaketoolchain:generator=Ninja `
       -c tools.microsoft.msbuild:vs_version=17 `
