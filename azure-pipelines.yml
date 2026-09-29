@@ -5,98 +5,91 @@ pool:
   vmImage: windows-latest
 
 steps:
+
+# 1. Checkout
 - checkout: self
   clean: true
-  fetchDepth: 1
   submodules: recursive
+  fetchDepth: 0
 
+
+# 2. Install tools
 - powershell: |
+
     git --version
     python --version
 
-    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-    if (-not (Test-Path $vswhere)) {
-      throw "vswhere.exe not found"
-    }
+    python -m pip install --upgrade pip
+    python -m pip install pipx
 
-    $vsPath = (& $vswhere -latest -products * -property installationPath).Trim()
-    if (-not $vsPath) {
-      throw "Visual Studio installation not found"
-    }
+    pipx install conan
 
-    $cmake = Join-Path $vsPath "Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
-    $ninja = Join-Path $vsPath "Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe"
-
-    if (-not (Test-Path $cmake)) {
-      throw "cmake.exe not found"
-    }
-
-    if (-not (Test-Path $ninja)) {
-      throw "ninja.exe not found"
-    }
-
-    Set-Content -Path .vs_install_path -Value $vsPath -Encoding ascii
-  displayName: Check Windows toolchain
-
-- powershell: |
-    python -m pip install --upgrade "conan>=2,<3"
     conan --version
-    conan profile detect --force
-  displayName: Install Conan 2
 
+  displayName: Install Conan
+
+
+# 3. Restore official VCMI Conan dependencies
 - powershell: |
+
     bash CI/install_conan_dependencies.sh dependencies-windows-x64
 
     if ($LASTEXITCODE -ne 0) {
-      throw "Dependency install failed"
+        throw "Conan dependency restore failed"
     }
-  displayName: Install VCMI dependencies
 
+  displayName: Restore VCMI dependencies
+
+
+
+# 4. Conan install (official parameters)
 - powershell: |
-    $repo = (Get-Location).Path
-    $vsPath = (Get-Content .vs_install_path -Raw).Trim()
 
-    $cmake = "$vsPath\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
-    $ninja = "$vsPath\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja"
-
-    $env:Path = "$ninja;$cmake;$env:Path"
+    conan profile detect
 
     conan install . `
-      --output-folder=conan-msvc `
+      --output-folder=conan-generated `
       --build=never `
+      --profile=dependencies/conan_profiles/msvc-x64 `
+      --conf="tools.cmake.cmaketoolchain:generator=Ninja" `
       -s "&:build_type=RelWithDebInfo" `
-      -c tools.cmake.cmaketoolchain:generator=Ninja `
-      -c tools.microsoft.msbuild:vs_version=17 `
       -o "&:target_pre_windows10=True"
 
     if ($LASTEXITCODE -ne 0) {
-      throw "Conan install failed"
+        throw "Conan install failed"
     }
 
-    call conan-msvc\conanrun.bat
+  displayName: Conan configure
 
-    cmake -S . `
-      -B build `
-      -G Ninja `
-      -DCMAKE_TOOLCHAIN_FILE="$repo\conan-msvc\conan_toolchain.cmake" `
-      -DCMAKE_BUILD_TYPE=RelWithDebInfo `
-      -DENABLE_CCACHE=OFF `
-      -DENABLE_TEST=OFF `
-      -DENABLE_PCH=OFF
+
+
+# 5. Build
+- powershell: |
+
+    cmake --preset windows-msvc-ninja-release
 
     if ($LASTEXITCODE -ne 0) {
-      throw "CMake configure failed"
+        throw "CMake configure failed"
     }
 
-    cmake --build build --parallel 2
+
+    cmake --build --preset windows-msvc-ninja-release
 
     if ($LASTEXITCODE -ne 0) {
-      throw "VCMI build failed"
+        throw "VCMI build failed"
     }
-  displayName: Configure and build VCMI
 
+
+  displayName: Build VCMI
+
+
+
+# 6. Upload build
 - task: PublishPipelineArtifact@1
   inputs:
-    targetPath: '$(Build.SourcesDirectory)/build'
+
+    targetPath: '$(Build.SourcesDirectory)/out/build/windows-msvc-ninja-release'
+
     artifact: 'Nullkiller2-v0.12-alpha1-build'
-  displayName: Publish Nullkiller2 build artifact
+
+  displayName: Upload build artifact
