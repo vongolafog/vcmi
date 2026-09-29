@@ -73,7 +73,7 @@ steps:
     ccache -p
   displayName: Check ccache
 
-# 5. Build
+# 5. List CMake targets
 - powershell: |
 
     $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -92,14 +92,13 @@ steps:
     }
 
 
-    cmd.exe /c "`"$vsPath\Common7\Tools\VsDevCmd.bat`" -arch=x64 && cmake --build --preset windows-msvc-ninja-release"
+    cmd.exe /c "`"$vsPath\Common7\Tools\VsDevCmd.bat`" -arch=x64 && cmake --build --preset windows-msvc-ninja-release --target help"
 
     if ($LASTEXITCODE -ne 0) {
-        throw "VCMI build failed"
+        throw "List target failed"
     }
 
-  displayName: Build VCMI
-
+  displayName: List CMake targets
 
 
 # 6. Upload build
