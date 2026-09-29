@@ -1,76 +1,38 @@
-trigger: none
-pr: none
+      --build=never `
+      --profile=dependencies\conan_profiles\msvc-x64 `
+      -s "&:build_type=RelWithDebInfo" `
+      -c tools.cmake.cmaketoolchain:generator=Ninja `
+      -c tools.microsoft.msbuild:vs_version=17 `
+      -o "&:target_pre_windows10=True"
 
-pool:
-  vmImage: windows-latest
-
-steps:
-- checkout: self
-  clean: true
-  fetchDepth: 1
-
-- powershell: |
-    git --version
-    python --version
-
-    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-    if (-not (Test-Path $vswhere)) { throw "vswhere.exe not found" }
-
-    $vsPath = (& $vswhere -latest -products * -property installationPath).Trim()
-    if (-not $vsPath) { throw "Visual Studio installation not found" }
-
-    $cmake = Join-Path $vsPath "Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
-    $ninja = Join-Path $vsPath "Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe"
-
-    if (-not (Test-Path $cmake)) { throw "cmake.exe not found" }
-    if (-not (Test-Path $ninja)) { throw "ninja.exe not found" }
-
-    Set-Content -Path .vs_install_path -Value $vsPath -Encoding ascii
-  displayName: Check Windows toolchain
-
-- powershell: |
-    python -m pip install --upgrade "conan>=2,<3"
-    conan profile detect --force
-  displayName: Install Conan 2
-
-- powershell: |
-    bash CI/install_conan_dependencies.sh dependencies-windows-x64
-    if ($LASTEXITCODE -ne 0) { throw "Dependency install failed" }
-  displayName: Install VCMI dependencies
-
-- powershell: |
-    $repo = (Get-Location).Path
-    $vsPath = (Get-Content .vs_install_path -Raw).Trim()
-
-    $script = @"
-    @echo off
-    call "$vsPath\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
-    if errorlevel 1 exit /b 1
-
-    cd /d "$repo"
-
-    conan install . --output-folder=conan-msvc --build=never --profile=dependencies\conan_profiles\msvc-x64 -s "&:build_type=RelWithDebInfo" -c tools.cmake.cmaketoolchain:generator=Ninja -c tools.microsoft.msbuild:vs_version=17 -o "&:target_pre_windows10=True"
-
-    if errorlevel 1 exit /b 1
+    if ($LASTEXITCODE -ne 0) {
+      throw "Conan install failed"
+    }
 
     call conan-msvc\conanrun.bat
-    if errorlevel 1 exit /b 1
 
-    cmake -S "$repo" -B "$repo\build" -G Ninja -DCMAKE_TOOLCHAIN_FILE="$repo\conan-msvc\conan_toolchain.cmake" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_CCACHE=OFF -DENABLE_TEST=OFF -DENABLE_PCH=OFF
+    cmake -S . `
+      -B build `
+      -G Ninja `
+      -DCMAKE_TOOLCHAIN_FILE="$repo\conan-msvc\conan_toolchain.cmake" `
+      -DCMAKE_BUILD_TYPE=RelWithDebInfo `
+      -DENABLE_CCACHE=OFF `
+      -DENABLE_TEST=OFF `
+      -DENABLE_PCH=OFF
 
-    if errorlevel 1 exit /b 1
+    if ($LASTEXITCODE -ne 0) {
+      throw "CMake configure failed"
+    }
 
-    cmake --build "$repo\build" --parallel 2
-    "@
+    cmake --build build --parallel 2
 
-    Set-Content build_vcmi.cmd $script -Encoding ascii
-    cmd.exe /d /c build_vcmi.cmd
-
-    if ($LASTEXITCODE -ne 0) { throw "VCMI build failed" }
-    displayName: Configure and build VCMI
+    if ($LASTEXITCODE -ne 0) {
+      throw "VCMI build failed"
+    }
+  displayName: Configure and build VCMI
 
 - task: PublishPipelineArtifact@1
   inputs:
     targetPath: '$(Build.SourcesDirectory)/build'
     artifact: 'Nullkiller2-v0.12-alpha1-build'
-  displayName: Publish build artifact
+  displayName: Publish Nullkiller2 build artifact
