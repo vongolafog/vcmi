@@ -68,7 +68,10 @@ steps:
     key: '"ccache" | "$(Agent.OS)" | "nullkiller2-v0.12"'
     path: $(USERPROFILE)\.ccache
   displayName: Cache compiler
-
+- powershell: |
+    ccache -s
+    ccache -p
+  displayName: Check ccache
 
 # 5. Build
 - powershell: |
