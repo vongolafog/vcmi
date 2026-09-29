@@ -101,12 +101,3 @@ steps:
   displayName: List CMake targets
 
 
-# 6. Upload build
-- task: PublishPipelineArtifact@1
-  inputs:
-
-    targetPath: '$(Build.SourcesDirectory)/out/build/windows-msvc-ninja-release'
-
-    artifact: 'Nullkiller2-v0.12-alpha1-build'
-
-  displayName: Upload build artifact
