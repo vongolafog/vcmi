@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Types.h"
+#include "InstanceID.h"
 
 namespace NK2AI
 {
