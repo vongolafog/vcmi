@@ -91,13 +91,6 @@ steps:
 
   displayName: Build VCMI
 
-    if ($LASTEXITCODE -ne 0) {
-        throw "VCMI build failed"
-    }
-
-
-  displayName: Build VCMI
-
 
 
 # 6. Upload build
