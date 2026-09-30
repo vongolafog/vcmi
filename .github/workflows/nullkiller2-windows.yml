@@ -1,0 +1,101 @@
+name: Nullkiller2 Windows build
+
+on:
+  push:
+    branches:
+      - nullkiller2-v0.12-alpha1
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Ensure MSVC v142 toolset
+        shell: powershell
+        run: |
+          $toolset = Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC" -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -like "14.29*" } |
+            Select-Object -First 1
+          if (-not $toolset) {
+            $installer = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vs_installer.exe"
+            if (-not (Test-Path $installer)) { throw "Visual Studio Installer not found." }
+            $args = @(
+              "modify",
+              "--installPath", "C:\Program Files\Microsoft Visual Studio\2022\Enterprise",
+              "--add", "Microsoft.VisualStudio.Component.VC.14.29.16.11.x86.x64",
+              "--quiet",
+              "--norestart"
+            )
+            $p = Start-Process -FilePath $installer -ArgumentList $args -Wait -PassThru
+            if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) {
+              throw "Visual Studio Installer exited with code $($p.ExitCode)"
+            }
+          }
+
+      - name: Setup MSVC 14.29
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+          toolset: 14.29
+
+      - name: Install Conan 2
+        shell: cmd
+        run: |
+          python -m pip install --upgrade "conan>=2,<3"
+          conan profile detect --force
+          conan --version
+
+      - name: Restore VCMI dependencies
+        shell: bash
+        run: |
+          bash CI/install_conan_dependencies.sh dependencies-windows-x64
+
+      - name: Generate Conan toolchain
+        shell: cmd
+        run: |
+          conan install . --output-folder=conan-msvc --build=never --profile=dependencies\conan_profiles\msvc-x64 -s "&:build_type=RelWithDebInfo" -c tools.cmake.cmaketoolchain:generator=Ninja -c tools.microsoft.msbuild:vs_version=17 -o "&:target_pre_windows10=True"
+
+      - name: Configure
+        shell: cmd
+        run: |
+          call conan-msvc\conanrun.bat
+          cmake -S . -B build -G Ninja -DCMAKE_TOOLCHAIN_FILE="%CD%\conan-msvc\conan_toolchain.cmake" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_CCACHE=OFF -DENABLE_TEST=OFF -DENABLE_PCH=OFF
+
+      - name: Compile Nullkiller2
+        shell: cmd
+        run: |
+          call conan-msvc\conanrun.bat
+          cmake --build build --target Nullkiller2 --parallel 2
+
+      - name: Link VCMI library
+        shell: cmd
+        run: |
+          call conan-msvc\conanrun.bat
+          cmake --build build --target vcmi --parallel 2
+
+      - name: Collect VCMI library
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          $dll = Get-ChildItem -Path build -Filter VCMI_lib.dll -Recurse | Select-Object -First 1
+          if (-not $dll) { throw "VCMI_lib.dll was not found." }
+          Copy-Item $dll.FullName artifact\VCMI_lib.dll
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nullkiller2-v0.12-alpha1-Windows
+          path: artifact/VCMI_lib.dll
+          if-no-files-found: error

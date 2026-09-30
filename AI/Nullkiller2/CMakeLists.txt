@@ -25,6 +25,7 @@ set(Nullkiller2_SRCS
 		Engine/Settings.cpp
 		Engine/FuzzyHelper.cpp
 		Engine/AIMemory.cpp
+		Strategic/StrategicPlanner.cpp
 		Goals/AbstractGoal.cpp
 		Goals/Composition.cpp
 		Goals/SaveResources.cpp
@@ -100,6 +101,8 @@ set(Nullkiller2_HEADERS
 		Engine/Settings.h
 		Engine/FuzzyHelper.h
 		Engine/AIMemory.h
+		Strategic/StrategicMission.h
+		Strategic/StrategicPlanner.h
 		Goals/AbstractGoal.h
 		Goals/CGoal.h
 		Goals/Composition.h
