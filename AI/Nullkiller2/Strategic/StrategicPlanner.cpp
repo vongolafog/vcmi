@@ -24,7 +24,26 @@ struct StrategicPathCandidate
 {
 	const CGHeroInstance * hero = nullptr;
 	float score = -1.0f;
+	bool safe = false;
+	bool mainHero = false;
 };
+
+bool isBetterStrategicCandidate(const StrategicPathCandidate & candidate, const StrategicPathCandidate & best)
+{
+	if(!candidate.hero)
+		return false;
+	if(!best.hero)
+		return true;
+
+	// A strategic conquest mission should belong to a main hero whenever one has
+	// a route. Within the same role, prefer a route that is already safe; only
+	// then compare distance/value score.
+	if(candidate.mainHero != best.mainHero)
+		return candidate.mainHero;
+	if(candidate.safe != best.safe)
+		return candidate.safe;
+	return candidate.score > best.score;
+}
 
 StrategicPathCandidate findBestTownPath(
 	Nullkiller * aiNk,
@@ -53,25 +72,22 @@ StrategicPathCandidate findBestTownPath(
 		if(aiNk->arePathHeroesLocked(path, releasedDefender))
 			continue;
 
-		if(!isSafeToVisit(
+		StrategicPathCandidate candidate;
+		candidate.hero = path.targetHero;
+		candidate.score = missionPathScore(path, rewardEvaluator.getConquestValue(town));
+		candidate.safe = isSafeToVisit(
 			path.targetHero,
 			path.heroArmy,
 			path.getTotalDanger(),
-			aiNk->settings->getSafeAttackRatio()))
-		{
-			continue;
-		}
+			aiNk->settings->getSafeAttackRatio());
+		candidate.mainHero =
+			aiNk->heroManager->getHeroRoleOrDefaultInefficient(path.targetHero) == HeroRole::MAIN;
 
-		const float score = missionPathScore(path, rewardEvaluator.getConquestValue(town));
-		if(score > best.score)
-		{
-			best.hero = path.targetHero;
-			best.score = score;
-		}
+		if(isBetterStrategicCandidate(candidate, best))
+			best = candidate;
 	}
 
 	return best;
-}
 }
 
 StrategicPlanner::StrategicPlanner(Nullkiller * aiNk)
@@ -125,43 +141,53 @@ void StrategicPlanner::update()
 				const auto assignedPath = findBestTownPath(aiNk, town, assignedHero);
 				if(assignedPath.hero)
 				{
-					currentMission.actionable = true;
+					const bool wasActionable = currentMission.actionable;
+					currentMission.actionable = assignedPath.safe;
+
+					if(wasActionable != currentMission.actionable)
+					{
+						logAi->info(
+							"Strategic mission target %d with hero %d changed attack state: %s.",
+							currentMission.target,
+							currentMission.assignedHero,
+							currentMission.actionable ? "SAFE" : "WAIT");
+					}
 					return;
 				}
 			}
 
-			// Assigned hero was lost, locked by an urgent duty, or currently has no
-			// safe route. Prefer a replacement hero for the SAME town before ever
-			// changing the strategic target.
+			// Assigned hero was lost, locked by an urgent duty, or has no route.
+			// Prefer a replacement hero for the SAME town before ever changing the
+			// strategic target. The replacement route does not have to be safe yet.
 			const auto replacement = findBestTownPath(aiNk, town);
 			if(replacement.hero)
 			{
 				const int oldHero = currentMission.assignedHero;
 				currentMission.assignedHero = replacement.hero->id.getNum();
-				currentMission.actionable = true;
+				currentMission.actionable = replacement.safe;
 
 				if(oldHero != currentMission.assignedHero)
 				{
 					logAi->info(
-						"Strategic mission target %d reassigned from hero %d to hero %d.",
+						"Strategic mission target %d reassigned from hero %d to hero %d (attack state: %s).",
 						currentMission.target,
 						oldHero,
-						currentMission.assignedHero);
+						currentMission.assignedHero,
+						currentMission.actionable ? "SAFE" : "WAIT");
 				}
 				return;
 			}
 
-			// Preserve the long-term town target even when it is temporarily unsafe
-			// or unreachable. In that state we deliberately stop suppressing normal
-			// gathering so the AI can acquire troops/keys or discover another route.
+			// Keep memory of the town even with no current route. This is deliberately
+			// different from the old behaviour where an unsafe/unreachable town simply
+			// vanished from strategic consideration.
 			currentMission.actionable = false;
 			return;
 		}
 	}
 
 	const CGTownInstance * bestTown = nullptr;
-	const CGHeroInstance * bestHero = nullptr;
-	float bestScore = -1.0f;
+	StrategicPathCandidate bestCandidate;
 
 	for(const auto * town : aiNk->cc->getTownsInfo(false))
 	{
@@ -169,31 +195,36 @@ void StrategicPlanner::update()
 			continue;
 
 		const auto candidate = findBestTownPath(aiNk, town);
-		if(candidate.hero && candidate.score > bestScore)
+		if(isBetterStrategicCandidate(candidate, bestCandidate))
 		{
 			bestTown = town;
-			bestHero = candidate.hero;
-			bestScore = candidate.score;
+			bestCandidate = candidate;
 		}
 	}
 
-	if(!bestTown || !bestHero)
+	if(!bestTown || !bestCandidate.hero)
 		return;
 
+	// Discovery and attack permission are separate decisions. Seeing a reachable
+	// enemy town is enough to remember it as a long-term mission; safety only
+	// decides whether the assigned hero is allowed to execute the assault now.
 	currentMission.type = StrategicMission::Type::CAPTURE_TOWN;
 	currentMission.target = bestTown->id.getNum();
-	currentMission.assignedHero = bestHero->id.getNum();
+	currentMission.assignedHero = bestCandidate.hero->id.getNum();
 	currentMission.active = true;
-	currentMission.actionable = true;
+	currentMission.actionable = bestCandidate.safe;
 
 	logAi->info(
-		"Strategic mission acquired: capture town %s at %s with hero %s (target %d, hero %d, score %.3f).",
+		"Strategic mission acquired: capture town %s at %s with hero %s "
+		"(target %d, hero %d, role %s, attack state %s, score %.3f).",
 		bestTown->getNameTextID(),
 		bestTown->visitablePos().toString(),
-		bestHero->getNameTextID(),
+		bestCandidate.hero->getNameTextID(),
 		currentMission.target,
 		currentMission.assignedHero,
-		bestScore);
+		bestCandidate.mainHero ? "MAIN" : "SCOUT",
+		currentMission.actionable ? "SAFE" : "WAIT",
+		bestCandidate.score);
 }
 
 const StrategicMission & StrategicPlanner::getCurrentMission() const
