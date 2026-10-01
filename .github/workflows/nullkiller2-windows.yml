@@ -1,4 +1,4 @@
-name: Nullkiller2 Windows build
+name: Nullkiller2 Windows full package
 
 on:
   push:
@@ -28,9 +28,11 @@ jobs:
           $toolset = Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC" -Directory -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -like "14.29*" } |
             Select-Object -First 1
+
           if (-not $toolset) {
             $installer = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vs_installer.exe"
             if (-not (Test-Path $installer)) { throw "Visual Studio Installer not found." }
+
             $args = @(
               "modify",
               "--installPath", "C:\Program Files\Microsoft Visual Studio\2022\Enterprise",
@@ -38,6 +40,7 @@ jobs:
               "--quiet",
               "--norestart"
             )
+
             $p = Start-Process -FilePath $installer -ArgumentList $args -Wait -PassThru
             if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) {
               throw "Visual Studio Installer exited with code $($p.ExitCode)"
@@ -67,55 +70,54 @@ jobs:
         run: |
           conan install . --output-folder=conan-msvc --build=never --profile=dependencies\conan_profiles\msvc-x64 -s "&:build_type=RelWithDebInfo" -c tools.cmake.cmaketoolchain:generator=Ninja -c tools.microsoft.msbuild:vs_version=17 -o "&:target_pre_windows10=True"
 
-      - name: Configure
+      - name: Configure full Windows build
         shell: cmd
         run: |
           call conan-msvc\conanrun.bat
-          cmake -S . -B build -G Ninja -DCMAKE_TOOLCHAIN_FILE="%CD%\conan-msvc\conan_toolchain.cmake" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_CCACHE=OFF -DENABLE_TEST=OFF -DENABLE_PCH=OFF
+          cmake -S . -B build -G Ninja ^
+            -DCMAKE_TOOLCHAIN_FILE="%CD%\conan-msvc\conan_toolchain.cmake" ^
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo ^
+            -DENABLE_CCACHE=OFF ^
+            -DENABLE_TEST=OFF ^
+            -DENABLE_PCH=OFF ^
+            -DPACKAGE_FILE_NAME=Nullkiller2-v0.12-alpha1-Windows-x64
 
-      - name: Compile Nullkiller2
+      - name: Build complete VCMI runtime
         shell: cmd
         run: |
           call conan-msvc\conanrun.bat
-          cmake --build build --target Nullkiller2 --parallel 2
+          cmake --build build --parallel 2
 
-      - name: Link VCMI library
+      - name: Create complete Windows ZIP
         shell: cmd
         run: |
           call conan-msvc\conanrun.bat
-          cmake --build build --target vcmi --parallel 2
+          cd build
+          cpack -C RelWithDebInfo
+          if errorlevel 1 exit /b 1
 
-      - name: Collect VCMI runtime package
+      - name: Verify package
         shell: powershell
         run: |
-          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          $zip = Get-ChildItem -Path build -Filter "Nullkiller2-v0.12-alpha1-Windows-x64*.zip" | Select-Object -First 1
+          if (-not $zip) { throw "Complete Windows ZIP was not generated." }
 
-          Write-Host "Searching runtime files..."
+          Write-Host "Generated package:"
+          Get-Item $zip.FullName | Format-List FullName,Length,LastWriteTime
 
-          $client = Get-ChildItem -Path build -Filter VCMI_client.exe -Recurse | Select-Object -First 1
+          New-Item -ItemType Directory -Force -Path package-check | Out-Null
+          Expand-Archive -Path $zip.FullName -DestinationPath package-check -Force
 
-          if ($client) {
-              Write-Host "Found runtime directory:"
-              Write-Host $client.Directory.FullName
-
-              Copy-Item "$($client.Directory.FullName)\*" artifact -Recurse -Force
-          }
-          else {
-              Write-Host "VCMI_client.exe not found, collecting exe/dll files"
-
-              Get-ChildItem -Path build -Include *.exe,*.dll -Recurse |
-              ForEach-Object {
-                  Copy-Item $_.FullName artifact\$($_.Name) -Force
-              }
+          $required = @("VCMI_client.exe", "VCMI_lib.dll")
+          foreach ($name in $required) {
+            $found = Get-ChildItem -Path package-check -Filter $name -Recurse | Select-Object -First 1
+            if (-not $found) { throw "$name is missing from the package." }
+            Write-Host "Found $name at $($found.FullName)"
           }
 
-          Write-Host "Artifact files:"
-          Get-ChildItem artifact
-
-
-      - name: Upload build
+      - name: Upload complete Windows package
         uses: actions/upload-artifact@v4
         with:
           name: Nullkiller2-v0.12-alpha1-Windows-Full
-          path: artifact/
+          path: build/Nullkiller2-v0.12-alpha1-Windows-x64*.zip
           if-no-files-found: error
