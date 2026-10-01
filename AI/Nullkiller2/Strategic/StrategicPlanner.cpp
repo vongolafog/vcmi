@@ -89,6 +89,7 @@ StrategicPathCandidate findBestTownPath(
 
 	return best;
 }
+}
 
 StrategicPlanner::StrategicPlanner(Nullkiller * aiNk)
 	: aiNk(aiNk)
