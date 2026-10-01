@@ -16,7 +16,9 @@ public:
 
 	Type type = Type::NONE;
 	int target = -1;
+	int assignedHero = -1;
 	bool active = false;
+	bool actionable = false;
 };
 
 }

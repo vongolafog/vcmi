@@ -19,6 +19,59 @@ float missionPathScore(const AIPath & path, float conquestValue)
 	const float value = std::max(0.25f, conquestValue);
 	return value * 100.0f / (1.0f + 2.0f * static_cast<float>(path.turn()) + movementCost);
 }
+
+struct StrategicPathCandidate
+{
+	const CGHeroInstance * hero = nullptr;
+	float score = -1.0f;
+};
+
+StrategicPathCandidate findBestTownPath(
+	Nullkiller * aiNk,
+	const CGTownInstance * town,
+	const CGHeroInstance * requiredHero = nullptr)
+{
+	StrategicPathCandidate best;
+	RewardEvaluator rewardEvaluator(aiNk);
+	std::vector<AIPath> paths;
+
+	aiNk->pathfinder->calculatePathInfo(paths, town->visitablePos(), aiNk->isObjectGraphAllowed());
+
+	for(const auto & path : paths)
+	{
+		if(!path.targetHero || path.targetHero->getOwner() != aiNk->playerID)
+			continue;
+
+		if(requiredHero && path.targetHero != requiredHero)
+			continue;
+
+		const CGHeroInstance * releasedDefender =
+			aiNk->canReleaseDefenderForTownCapture(path.targetHero, town, path)
+				? path.targetHero
+				: nullptr;
+
+		if(aiNk->arePathHeroesLocked(path, releasedDefender))
+			continue;
+
+		if(!isSafeToVisit(
+			path.targetHero,
+			path.heroArmy,
+			path.getTotalDanger(),
+			aiNk->settings->getSafeAttackRatio()))
+		{
+			continue;
+		}
+
+		const float score = missionPathScore(path, rewardEvaluator.getConquestValue(town));
+		if(score > best.score)
+		{
+			best.hero = path.targetHero;
+			best.score = score;
+		}
+	}
+
+	return best;
+}
 }
 
 StrategicPlanner::StrategicPlanner(Nullkiller * aiNk)
@@ -48,77 +101,98 @@ void StrategicPlanner::clearMission()
 
 void StrategicPlanner::update()
 {
-	// A capture mission is persistent: normal turn replanning must not replace it
-	// with a resource pickup. It is cleared only when the town is no longer a
-	// valid conquest target (captured, allied, removed, etc.).
+	// Keep both the target and the responsible hero stable. This prevents the
+	// normal per-pass rescoring loop from making the same hero walk toward a
+	// strategic target, then turn around for a chest/resource, then turn back.
 	if(currentMission.active)
 	{
-		const auto * target = aiNk->cc->getObj(ObjectInstanceID(currentMission.target), false);
-		if(isMissionTarget(target))
-			return;
+		const auto * targetObject = aiNk->cc->getObj(ObjectInstanceID(currentMission.target), false);
+		if(!isMissionTarget(targetObject))
+		{
+			logAi->debug("Strategic mission target %d is no longer valid. Clearing mission.", currentMission.target);
+			clearMission();
+		}
+		else
+		{
+			const auto * town = dynamic_cast<const CGTownInstance *>(targetObject);
+			const CGHeroInstance * assignedHero = nullptr;
 
-		logAi->debug("Strategic mission target %d is no longer valid. Clearing mission.", currentMission.target);
-		clearMission();
+			if(currentMission.assignedHero >= 0)
+				assignedHero = aiNk->cc->getHero(ObjectInstanceID(currentMission.assignedHero));
+
+			if(assignedHero && assignedHero->getOwner() == aiNk->playerID)
+			{
+				const auto assignedPath = findBestTownPath(aiNk, town, assignedHero);
+				if(assignedPath.hero)
+				{
+					currentMission.actionable = true;
+					return;
+				}
+			}
+
+			// Assigned hero was lost, locked by an urgent duty, or currently has no
+			// safe route. Prefer a replacement hero for the SAME town before ever
+			// changing the strategic target.
+			const auto replacement = findBestTownPath(aiNk, town);
+			if(replacement.hero)
+			{
+				const int oldHero = currentMission.assignedHero;
+				currentMission.assignedHero = replacement.hero->id.getNum();
+				currentMission.actionable = true;
+
+				if(oldHero != currentMission.assignedHero)
+				{
+					logAi->info(
+						"Strategic mission target %d reassigned from hero %d to hero %d.",
+						currentMission.target,
+						oldHero,
+						currentMission.assignedHero);
+				}
+				return;
+			}
+
+			// Preserve the long-term town target even when it is temporarily unsafe
+			// or unreachable. In that state we deliberately stop suppressing normal
+			// gathering so the AI can acquire troops/keys or discover another route.
+			currentMission.actionable = false;
+			return;
+		}
 	}
 
 	const CGTownInstance * bestTown = nullptr;
+	const CGHeroInstance * bestHero = nullptr;
 	float bestScore = -1.0f;
-	RewardEvaluator rewardEvaluator(aiNk);
 
 	for(const auto * town : aiNk->cc->getTownsInfo(false))
 	{
 		if(!isMissionTarget(town))
 			continue;
 
-		std::vector<AIPath> paths;
-		aiNk->pathfinder->calculatePathInfo(paths, town->visitablePos(), aiNk->isObjectGraphAllowed());
-
-		for(const auto & path : paths)
+		const auto candidate = findBestTownPath(aiNk, town);
+		if(candidate.hero && candidate.score > bestScore)
 		{
-			if(!path.targetHero || path.targetHero->getOwner() != aiNk->playerID)
-				continue;
-
-			const CGHeroInstance * releasedDefender =
-				aiNk->canReleaseDefenderForTownCapture(path.targetHero, town, path)
-					? path.targetHero
-					: nullptr;
-
-			if(aiNk->arePathHeroesLocked(path, releasedDefender))
-				continue;
-
-			// Do not create a strategic mission from a suicidal route. If the
-			// town is currently too dangerous, normal gathering can continue
-			// until a safe route appears.
-			if(!isSafeToVisit(
-				path.targetHero,
-				path.heroArmy,
-				path.getTotalDanger(),
-				aiNk->settings->getSafeAttackRatio()))
-			{
-				continue;
-			}
-
-			const float score = missionPathScore(path, rewardEvaluator.getConquestValue(town));
-			if(score > bestScore)
-			{
-				bestScore = score;
-				bestTown = town;
-			}
+			bestTown = town;
+			bestHero = candidate.hero;
+			bestScore = candidate.score;
 		}
 	}
 
-	if(!bestTown)
+	if(!bestTown || !bestHero)
 		return;
 
 	currentMission.type = StrategicMission::Type::CAPTURE_TOWN;
 	currentMission.target = bestTown->id.getNum();
+	currentMission.assignedHero = bestHero->id.getNum();
 	currentMission.active = true;
+	currentMission.actionable = true;
 
 	logAi->info(
-		"Strategic mission acquired: capture town %s at %s (target %d, score %.3f).",
+		"Strategic mission acquired: capture town %s at %s with hero %s (target %d, hero %d, score %.3f).",
 		bestTown->getNameTextID(),
 		bestTown->visitablePos().toString(),
+		bestHero->getNameTextID(),
 		currentMission.target,
+		currentMission.assignedHero,
 		bestScore);
 }
 
@@ -137,13 +211,35 @@ int StrategicPlanner::getMissionTargetId() const
 	return hasActiveMission() ? currentMission.target : -1;
 }
 
+int StrategicPlanner::getAssignedHeroId() const
+{
+	return hasActiveMission() ? currentMission.assignedHero : -1;
+}
+
+bool StrategicPlanner::isMissionSupportTask(const Goals::TSubgoal & task) const
+{
+	if(!task)
+		return false;
+
+	switch(task->goalType)
+	{
+	case Goals::HERO_EXCHANGE:
+	case Goals::ARMY_UPGRADE:
+	case Goals::ADVENTURE_SPELL_CAST:
+		return true;
+	default:
+		return false;
+	}
+}
+
 float StrategicPlanner::adjustPriority(
 	const Goals::TSubgoal & task,
 	const int priorityTier,
 	const float priority) const
 {
 	if(!hasActiveMission()
-		|| priorityTier != PriorityEvaluator::PriorityTier::EXPLORE_AND_GATHER
+		|| !currentMission.actionable
+		|| currentMission.assignedHero < 0
 		|| !task
 		|| !task->isElementar())
 	{
@@ -151,15 +247,38 @@ float StrategicPlanner::adjustPriority(
 	}
 
 	const ObjectInstanceID targetId(currentMission.target);
-	if(!task->asTask()->isObjectAffected(targetId))
+	const ObjectInstanceID heroId(currentMission.assignedHero);
+	const auto * taskImpl = task->asTask();
+
+	const bool usesAssignedHero = taskImpl->isObjectAffected(heroId);
+	if(!usesAssignedHero)
 		return priority;
 
-	// KILL/INSTADEFEND/ESCAPE tiers have already had their chance. At the normal
-	// gather tier, keep the hero on the strategic route instead of allowing a
-	// chest/resource pickup to replace the town mission. Deep decomposition
-	// keeps the original town in the composition, so a border guard/keymaster,
-	// monster, quest or other blocker is boosted as a subtask of this mission.
-	return std::max(priority, STRATEGIC_MISSION_PRIORITY);
+	const bool advancesMission = taskImpl->isObjectAffected(targetId);
+
+	// Do not steal the assigned hero for another multi-turn conquest/chase while
+	// a town mission is actionable. Immediate INSTAKILL, urgent defence and
+	// ESCAPE are evaluated in their own tiers and remain untouched.
+	if(priorityTier == PriorityEvaluator::PriorityTier::KILL && !advancesMission)
+		return 0.0f;
+
+	if(priorityTier != PriorityEvaluator::PriorityTier::EXPLORE_AND_GATHER)
+		return priority;
+
+	if(advancesMission)
+	{
+		// The deep-decomposed blocker task still carries the town as an affected
+		// object, so monsters, border guards, quest gates and keymaster subtasks
+		// inherit this strategic priority instead of replacing the town mission.
+		return std::max(priority, STRATEGIC_MISSION_PRIORITY);
+	}
+
+	if(isMissionSupportTask(task))
+		return priority;
+
+	// Suppress ordinary resource/chest/exploration detours for the committed
+	// hero. Other heroes continue using the normal Nullkiller priorities.
+	return 0.0f;
 }
 
 }

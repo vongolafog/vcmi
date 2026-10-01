@@ -19,9 +19,10 @@ public:
 	const StrategicMission & getCurrentMission() const;
 	bool hasActiveMission() const;
 	int getMissionTargetId() const;
+	int getAssignedHeroId() const;
 
-	/// Strategic town missions are allowed to survive beyond the normal short
-	/// conquest horizon. Urgent kill/defence/escape tiers still run first.
+	/// Keep the assigned hero committed to the strategic route while still allowing
+	/// immediate danger/defence handling and army-support actions.
 	float adjustPriority(const Goals::TSubgoal & task, int priorityTier, float priority) const;
 
 private:
@@ -30,6 +31,7 @@ private:
 
 	void clearMission();
 	bool isMissionTarget(const CGObjectInstance * object) const;
+	bool isMissionSupportTask(const Goals::TSubgoal & task) const;
 };
 
 }
