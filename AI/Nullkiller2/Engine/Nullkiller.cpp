@@ -27,6 +27,7 @@
 #include "../Behaviors/RecruitHeroBehavior.h"
 #include "../Behaviors/StayAtTownBehavior.h"
 #include "../Goals/Invalid.h"
+#include "../Goals/CaptureObject.h"
 #include "Goals/RecruitHero.h"
 #include "ResourceTrader.h"
 
@@ -266,10 +267,17 @@ Goals::TTaskVec Nullkiller::buildPlanAndFilter(
 			{
 				const auto & task = tasks[i];
 				if(task->asTask()->priority <= 0 || priorityTier != PriorityEvaluator::PriorityTier::BUILDINGS)
-					task->asTask()->priority = evaluator->evaluate(
+				{
+					float evaluatedPriority = evaluator->evaluate(
 						task,
 						priorityTier,
 						evaluationContexts.at(task.get()));
+
+					if(strategicPlanner)
+						evaluatedPriority = strategicPlanner->adjustPriority(task, priorityTier, evaluatedPriority);
+
+					task->asTask()->priority = evaluatedPriority;
+				}
 			}
 		}
 	);
@@ -592,11 +600,6 @@ void Nullkiller::makeTurn()
 	const int MAX_DEPTH = 10;
 	resetState();
 
-	if(strategicPlanner)
-	{
-		strategicPlanner->update();
-	}
-
 	Goals::TGoalVec tasks;
 	tracePlayerStatus(true);
 
@@ -613,8 +616,21 @@ void Nullkiller::makeTurn()
 
 		reserveRequiredTownDefenders();
 
+		if(strategicPlanner)
+			strategicPlanner->update();
+
 		tasks.clear();
 		decompose(tasks, sptr(CaptureObjectsBehavior()), 1);
+
+		if(strategicPlanner && strategicPlanner->hasActiveMission())
+		{
+			const auto * strategicTarget = cc->getObj(
+				ObjectInstanceID(strategicPlanner->getMissionTargetId()),
+				false);
+
+			if(strategicTarget)
+				decompose(tasks, sptr(CaptureObject(strategicTarget)), MAX_DEPTH);
+		}
 		decompose(tasks, sptr(ClusterBehavior()), MAX_DEPTH);
 		decompose(tasks, sptr(DefenceBehavior()), MAX_DEPTH);
 		decompose(tasks, sptr(EscapeBehavior()), 1);
