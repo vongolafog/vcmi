@@ -85,17 +85,37 @@ jobs:
           call conan-msvc\conanrun.bat
           cmake --build build --target vcmi --parallel 2
 
-      - name: Collect VCMI library
+      - name: Collect VCMI runtime package
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path artifact | Out-Null
-          $dll = Get-ChildItem -Path build -Filter VCMI_lib.dll -Recurse | Select-Object -First 1
-          if (-not $dll) { throw "VCMI_lib.dll was not found." }
-          Copy-Item $dll.FullName artifact\VCMI_lib.dll
+
+          Write-Host "Searching runtime files..."
+
+          $client = Get-ChildItem -Path build -Filter VCMI_client.exe -Recurse | Select-Object -First 1
+
+          if ($client) {
+              Write-Host "Found runtime directory:"
+              Write-Host $client.Directory.FullName
+
+              Copy-Item "$($client.Directory.FullName)\*" artifact -Recurse -Force
+          }
+          else {
+              Write-Host "VCMI_client.exe not found, collecting exe/dll files"
+
+              Get-ChildItem -Path build -Include *.exe,*.dll -Recurse |
+              ForEach-Object {
+                  Copy-Item $_.FullName artifact\$($_.Name) -Force
+              }
+          }
+
+          Write-Host "Artifact files:"
+          Get-ChildItem artifact
+
 
       - name: Upload build
         uses: actions/upload-artifact@v4
         with:
-          name: Nullkiller2-v0.12-alpha1-Windows
-          path: artifact/VCMI_lib.dll
+          name: Nullkiller2-v0.12-alpha1-Windows-Full
+          path: artifact/
           if-no-files-found: error
