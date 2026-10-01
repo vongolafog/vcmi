@@ -765,53 +765,14 @@ bool townHasFreeTavern(const CGTownInstance * town)
 	return canMoveVisitingHeroToGarrison;
 }
 
-uint64_t getHeroArmyStrengthWithCommander(const CGHeroInstance * hero, const CCreatureSet * heroArmy, int fortLevel)
+uint64_t getHeroArmyStrengthWithCommander(const CGHeroInstance * hero, const CCreatureSet * heroArmy, int /*fortLevel*/)
 {
-	uint64_t armyStrength = 0;
-
-	// The old siege estimate used CCreatureSet::getArmyStrength(fortLevel).
-	// With a castle (fortLevel == 3) that divides non-flying shooters by 3 and
-	// non-flying melee twice, i.e. by 9. That makes a normal ground army look
-	// almost worthless and prevents Nullkiller from considering otherwise
-	// reasonable assaults.
-	//
-	// Keep a conservative wall penalty, but make it bounded and monotonic:
-	//   fort    : no additional reduction (same as the old formula)
-	//   citadel : shooters 80%, melee 67%
-	//   castle  : shooters 67%, melee 50%
-	// Flying units are unaffected. Shooters with NO_WALL_PENALTY are also
-	// unaffected. This changes only Nullkiller's siege estimate, not core combat.
-	const int clampedFortLevel = std::clamp(fortLevel, 0, 3);
-	for(const auto & slot : heroArmy->Slots())
-	{
-		const auto * stack = slot.second.get();
-		uint64_t value = stack->getPower();
-
-		if(clampedFortLevel >= 2 && !stack->hasBonusOfType(BonusType::FLYING))
-		{
-			const bool shooter = stack->hasBonusOfType(BonusType::SHOOTER);
-			const bool ignoresWallPenalty = shooter && stack->hasBonusOfType(BonusType::NO_WALL_PENALTY);
-
-			if(!ignoresWallPenalty)
-			{
-				int percent = 100;
-				if(clampedFortLevel == 2)
-					percent = shooter ? 80 : 67;
-				else
-					percent = shooter ? 67 : 50;
-
-				value = static_cast<uint64_t>(
-					static_cast<long double>(value) * static_cast<long double>(percent) / 100.0L);
-			}
-		}
-
-		armyStrength += value;
-	}
+	// Siege fortifications no longer reduce the attacker's abstract army value.
+	// Their strategic effect is represented on the defending town side instead.
+	auto armyStrength = heroArmy->getArmyStrength();
 
 	if(hero && hero->getCommander() && hero->getCommander()->alive)
-	{
 		armyStrength += 100 * hero->getCommander()->level;
-	}
 
 	return armyStrength;
 }

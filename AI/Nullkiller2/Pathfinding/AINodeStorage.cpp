@@ -1847,16 +1847,9 @@ bool AINodeStorage::calculatePathInfo(AIPath & path, const AIPathNode * node) co
 		}
 	}
 
-	int fortLevel = 0;
-	for(const auto * object : aiNk->cc->getVisitableObjs(node->coord))
-	{
-		if(objWithID<Obj::TOWN>(object))
-			fortLevel = dynamic_cast<const CGTownInstance *>(object)->fortLevel();
-	}
-
 	path.targetObjectArmyLoss = evaluateArmyLoss(
 		path.targetHero,
-		getHeroArmyStrengthWithCommander(path.targetHero, path.heroArmy, fortLevel),
+		getHeroArmyStrengthWithCommander(path.targetHero, path.heroArmy),
 		path.targetObjectDanger);
 	path.exchangeCount = node->actor->actorExchangeCount;
 	return true;

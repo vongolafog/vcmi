@@ -72,10 +72,14 @@ StrategicPathCandidate findBestTownPath(
 		if(aiNk->arePathHeroesLocked(path, releasedDefender))
 			continue;
 
+		const bool survivalMode = aiNk->cc->getTownsInfo().empty();
+
 		StrategicPathCandidate candidate;
 		candidate.hero = path.targetHero;
-		candidate.score = missionPathScore(path, rewardEvaluator.getConquestValue(town));
-		candidate.safe = isSafeToVisit(
+		candidate.score = survivalMode
+			? 100.0f / (1.0f + 2.0f * static_cast<float>(path.turn()) + std::max(0.0f, path.movementCost()))
+			: missionPathScore(path, rewardEvaluator.getConquestValue(town));
+		candidate.safe = survivalMode || isSafeToVisit(
 			path.targetHero,
 			path.heroArmy,
 			path.getTotalDanger(),
@@ -215,9 +219,10 @@ void StrategicPlanner::update()
 	currentMission.active = true;
 	currentMission.actionable = bestCandidate.safe;
 
+	const bool survivalMode = aiNk->cc->getTownsInfo().empty();
 	logAi->info(
 		"Strategic mission acquired: capture town %s at %s with hero %s "
-		"(target %d, hero %d, role %s, attack state %s, score %.3f).",
+		"(target %d, hero %d, role %s, attack state %s, mode %s, score %.3f).",
 		bestTown->getNameTextID(),
 		bestTown->visitablePos().toString(),
 		bestCandidate.hero->getNameTextID(),
@@ -225,6 +230,7 @@ void StrategicPlanner::update()
 		currentMission.assignedHero,
 		bestCandidate.mainHero ? "MAIN" : "SCOUT",
 		currentMission.actionable ? "SAFE" : "WAIT",
+		survivalMode ? "SURVIVAL" : "NORMAL",
 		bestCandidate.score);
 }
 

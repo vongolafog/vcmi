@@ -45,21 +45,29 @@ ui64 FuzzyHelper::evaluateDanger(const int3 & tile, const CGHeroInstance * visit
 
 		if(objWithID<Obj::HERO>(dangerousObject))
 		{
-			auto hero = dynamic_cast<const CGHeroInstance *>(dangerousObject);
+			const auto * hero = dynamic_cast<const CGHeroInstance *>(dangerousObject);
+			const ui64 outsideHeroDanger =
+				evaluateDanger(hero) * aiNk->heroManager->getFightingStrengthCached(hero);
+			objectDanger = outsideHeroDanger;
 
-			if(hero->getVisitedTown() && !hero->getVisitedTown()->getGarrisonHero())
+			// Treat a visiting hero and the army behind the town as separate combat
+			// stages. This mirrors the classic AI behaviour better than summing every
+			// defender into one perfect combined estimate and also keeps the familiar
+			// "one-unit visiting hero" bait bounded by the actual inner garrison.
+			if(const auto * town = hero->getVisitedTown())
 			{
-				objectDanger += evaluateDanger(hero->getVisitedTown());
-			}
-			objectDanger *= aiNk->heroManager->getFightingStrengthCached(hero);
-		}
-		if (objWithID<Obj::TOWN>(dangerousObject))
-		{
-			auto town = dynamic_cast<const CGTownInstance*>(dangerousObject);
-			auto hero = town->getGarrisonHero();
+				ui64 innerTownDanger = evaluateDanger(town);
+				if(const auto * garrisonHero = town->getGarrisonHero())
+					innerTownDanger *= aiNk->heroManager->getFightingStrengthCached(garrisonHero);
 
-			if (hero)
-				objectDanger *= aiNk->heroManager->getFightingStrengthCached(hero);
+				objectDanger = std::max(outsideHeroDanger, innerTownDanger);
+			}
+		}
+		if(objWithID<Obj::TOWN>(dangerousObject))
+		{
+			const auto * town = dynamic_cast<const CGTownInstance *>(dangerousObject);
+			if(const auto * garrisonHero = town->getGarrisonHero())
+				objectDanger *= aiNk->heroManager->getFightingStrengthCached(garrisonHero);
 		}
 
 		if(dangerousObject->ID == Obj::SUBTERRANEAN_GATE)
@@ -98,17 +106,26 @@ ui64 FuzzyHelper::evaluateDanger(const CGObjectInstance * obj)
 	{
 	case Obj::TOWN:
 	{
-		const CGTownInstance * town = dynamic_cast<const CGTownInstance *>(obj);
+		const auto * town = dynamic_cast<const CGTownInstance *>(obj);
 		auto danger = town->getUpperArmy()->getArmyStrength();
 
+		// Strategic siege estimate, intentionally kept small and fixed:
+		// Fort walls alone add no abstract army value because the attacker has a
+		// catapult. Citadel/Castle account only for the extra towers/moat/delay.
+		// Do not scale this bonus with army size.
 		if(danger || town->getVisitingHero())
 		{
-			auto fortLevel = town->fortLevel();
-
-			if (fortLevel == CGTownInstance::EFortLevel::CASTLE)
-				danger += 10000;
-			else if(fortLevel == CGTownInstance::EFortLevel::CITADEL)
-				danger += 4000;
+			switch(town->fortLevel())
+			{
+			case CGTownInstance::EFortLevel::CASTLE:
+				danger += 2000;
+				break;
+			case CGTownInstance::EFortLevel::CITADEL:
+				danger += 1000;
+				break;
+			default:
+				break; // NONE / FORT = +0
+			}
 		}
 
 		return danger;
