@@ -29,6 +29,7 @@ public:
 	RewardEvaluator(const Nullkiller * aiNk) : aiNk(aiNk) {}
 
 	uint64_t getArmyReward(const CGObjectInstance * target, const CGHeroInstance * hero, const CCreatureSet * army, bool checkGold) const;
+	float getExperienceReward(const CGObjectInstance * target) const;
 	uint64_t getArmyGrowth(const CGObjectInstance * target, const CGHeroInstance * hero, const CCreatureSet * army) const;
 	int getGoldCost(const CGObjectInstance * target, const CGHeroInstance * hero, const CCreatureSet * army) const;
 	float getEnemyHeroStrategicalValue(const CGHeroInstance * enemy) const;
@@ -55,6 +56,7 @@ struct DLL_EXPORT EvaluationContext
 	float closestWayRatio;
 	float armyLossRatio;
 	float armyReward;
+	float experienceReward;
 	uint64_t armyGrowth;
 	int32_t goldReward;
 	int32_t goldCost;
