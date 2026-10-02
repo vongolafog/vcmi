@@ -11,9 +11,11 @@
 #include <limits>
 
 #include "Nullkiller.h"
+#include "../../../lib/battle/CombatValue.h"
 #include "../../../lib/entities/artifact/CArtifact.h"
 #include "../../../lib/entities/ResourceTypeHandler.h"
 #include "../../../lib/mapObjects/CGResource.h"
+#include "../../../lib/mapObjects/CGCreature.h"
 #include "../../../lib/mapping/TerrainTile.h"
 #include "../../../lib/CPlayerState.h"
 #include "../../../lib/RoadHandler.h"
@@ -76,6 +78,7 @@ EvaluationContext::EvaluationContext(const Nullkiller* aiNk)
 	goldReward(0),
 	goldCost(0),
 	armyReward(0),
+	experienceReward(0),
 	armyLossRatio(0),
 	heroRole(HeroRole::SCOUT),
 	turn(0),
@@ -133,6 +136,31 @@ int getVisibleEnemyTownCount(const CGTownInstance * town, const Nullkiller * aiN
 	}
 
 	return result;
+}
+
+static float estimateNeutralCreatureExperienceReward(const CGObjectInstance * target)
+{
+	if(!target || target->getOwner() != PlayerColor::NEUTRAL)
+		return 0.0f;
+
+	const auto * creature = dynamic_cast<const CGCreature *>(target);
+	if(!creature)
+		return 0.0f;
+
+	uint64_t totalHitPoints = 0;
+	for(const auto & slot : creature->Slots())
+	{
+		const auto * creatureType = slot.second->getCreatureID().toCreature();
+		if(!creatureType)
+			continue;
+
+		totalHitPoints += static_cast<uint64_t>(creatureType->getBaseHitPoints())
+			* static_cast<uint64_t>(slot.second->getCount());
+	}
+
+	// Neutral-battle hero experience is based on defeated creature HP.
+	// Only a small fraction becomes strategic value; normal danger/loss checks remain authoritative.
+	return static_cast<float>(totalHitPoints) * 0.05f;
 }
 
 int32_t estimateTownIncome(CCallback * cb, const CGObjectInstance * target, const CGHeroInstance * hero)
@@ -815,7 +843,9 @@ public:
 		// TODO: Mircea: See how we can get some kind of balance between MAINs in terms of army delivery
 		// See: GatherArmyBehavior::deliverArmyToHero
 		const uint64_t additionalArmyStrength = heroExchange.getReinforcementArmyStrength(evaluationContext.evaluator.aiNk);
-		const float additionalArmyRatio = additionalArmyStrength / heroExchange.hero->getArmyStrength();
+		// hero with no army would divide by zero, so treat its value as 1
+		const float additionalArmyRatio = static_cast<float>(additionalArmyStrength)
+			/ std::max<uint64_t>(1, heroExchange.hero->getArmyStrength());
 
 		evaluationContext.addNonCriticalStrategicalValue(additionalArmyRatio);
 		evaluationContext.armyGrowth = additionalArmyStrength;
@@ -1112,6 +1142,8 @@ public:
 		{
 			evaluationContext.goldReward += evaluationContext.evaluator.getGoldReward(target, hero);
 			evaluationContext.armyReward += evaluationContext.evaluator.getArmyReward(target, hero, army, checkGold);
+			if(evaluationContext.danger > 0)
+				evaluationContext.experienceReward += estimateNeutralCreatureExperienceReward(target);
 			evaluationContext.armyGrowth += evaluationContext.evaluator.getArmyGrowth(target, hero, army);
 			evaluationContext.skillReward += evaluationContext.evaluator.getSkillReward(target, hero, heroRole);
 			evaluationContext.addNonCriticalStrategicalValue(evaluationContext.evaluator.getStrategicalValue(target));
@@ -1170,6 +1202,8 @@ public:
 
 			evaluationContext.goldReward += evaluationContext.evaluator.getGoldReward(target, hero) / boost;
 			evaluationContext.armyReward += evaluationContext.evaluator.getArmyReward(target, hero, army, checkGold) / boost;
+			if(objInfo.second.danger > 0)
+				evaluationContext.experienceReward += estimateNeutralCreatureExperienceReward(target) / boost;
 			evaluationContext.skillReward += evaluationContext.evaluator.getSkillReward(target, hero, role) / boost;
 			evaluationContext.addNonCriticalStrategicalValue(evaluationContext.evaluator.getStrategicalValue(target) / boost);
 			evaluationContext.conquestValue += evaluationContext.evaluator.getConquestValue(target);
@@ -1518,7 +1552,7 @@ float PriorityEvaluator::evaluate(
 				if(evaluationContext.movementCost >= 1)
 					return 0;
 
-				// TODO: Mircea: Ensure defenseValue is taken into account. See AINodeStorage::evaluateArmyLoss and CCreatureSet::getArmyStrength
+				// TODO: Mircea: Ensure defenseValue is taken into account. See AINodeStorage::evaluateArmyLoss and CCreatureSet::estimateCombatValue
 				// TODO: Mircea: make it dynamic, allow higher risk for killing a higher risk hero if it leads to killing an entire player. See conquestValue
 				if(maxWillingToLoseForTask - evaluationContext.armyLossRatio < 0)
 					return 0;
@@ -1566,7 +1600,7 @@ float PriorityEvaluator::evaluate(
 			{
 				if(evaluationContext.isDefend)
 					return 0;
-				// TODO: Mircea: Ensure defenseValue is taken into account. See AINodeStorage::evaluateArmyLoss and CCreatureSet::getArmyStrength
+				// TODO: Mircea: Ensure defenseValue is taken into account. See AINodeStorage::evaluateArmyLoss and CCreatureSet::estimateCombatValue
 				// if (evaluationContext.defenseValue < 2 && evaluationContext.enemyHeroDangerRatio > involvedStrengthOutOfTotalRatio)
 					// return 0;
 				if (evaluationContext.turn > 0 && evaluationContext.isHero)
@@ -1684,6 +1718,7 @@ float PriorityEvaluator::evaluate(
 				}
 
 				score += evaluationContext.heroRole == MAIN ? evaluationContext.armyReward : evaluationContext.armyReward / 10.0f;
+				score += evaluationContext.heroRole == MAIN ? evaluationContext.experienceReward : evaluationContext.experienceReward / 10.0f;
 				// workshop (free lvl 1 units for Tower) and similar dwellings receive both armyReward and armyGrowth in evaluationContext
 				// For that reason only getDwellingArmyGrowth gets amplified towards day 7 if units are lost after
 				// Hero exchange and army upgrade are using this too
