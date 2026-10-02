@@ -1,9 +1,9 @@
-name: Nullkiller2 Windows quick DLL
+name: Nullkiller2 Windows v0.12-1 build
 
 on:
   push:
     branches:
-      - nullkiller2-v0.12-alpha1
+      - v0.12-1
   workflow_dispatch:
 
 concurrency:
@@ -74,7 +74,7 @@ jobs:
         run: |
           conan install . --output-folder=conan-msvc --build=never --profile=dependencies\conan_profiles\msvc-x64 -s "&:build_type=RelWithDebInfo" -c tools.cmake.cmaketoolchain:generator=Ninja -c tools.microsoft.msbuild:vs_version=17 -o "&:target_pre_windows10=True"
 
-      - name: Configure VCMI library build
+      - name: Configure VCMI build
         shell: cmd
         run: |
           call conan-msvc\conanrun.bat
@@ -85,10 +85,11 @@ jobs:
             -DENABLE_TEST=OFF ^
             -DENABLE_PCH=OFF
 
-      - name: Build VCMI library only
+      - name: Build Nullkiller2 and VCMI library
         shell: cmd
         run: |
           call conan-msvc\conanrun.bat
+          cmake --build build --target Nullkiller2 --parallel 2
           cmake --build build --target vcmi --parallel 2
 
       - name: Collect VCMI_lib.dll
@@ -105,10 +106,10 @@ jobs:
           Get-Item artifact\VCMI_lib.dll | Format-List FullName,Length,LastWriteTime
           Get-Content artifact\BUILD_COMMIT.txt
 
-      - name: Upload quick DLL
+      - name: Upload Nullkiller2 test build
         uses: actions/upload-artifact@v4
         with:
-          name: Nullkiller2-v0.12-alpha1-VCMI-lib
+          name: Nullkiller2-v0.12-1-experienceReward
           path: |
             artifact/VCMI_lib.dll
             artifact/BUILD_COMMIT.txt
