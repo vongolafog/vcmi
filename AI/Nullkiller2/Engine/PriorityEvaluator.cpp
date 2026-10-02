@@ -359,25 +359,6 @@ uint64_t RewardEvaluator::getArmyGrowth(
 	}
 }
 
-
-float RewardEvaluator::getExperienceReward(const CGObjectInstance * target, const CGHeroInstance * hero, const CCreatureSet * army) const
-{
-	// Experience is an additional strategic reward only.
-	// Army strength, danger and loss evaluation remain unchanged.
-	if(!target || !hero || !army)
-		return 0;
-
-	auto creature = dynamic_cast<const CGCreature *>(target);
-	if(!creature)
-		return 0;
-
-	const auto combatValue = creature->getCreatureSet()->estimateCombatValue();
-	if(combatValue <= 0)
-		return 0;
-
-	return static_cast<float>(combatValue) * 0.05f;
-}
-
 int RewardEvaluator::getGoldCost(const CGObjectInstance * target, const CGHeroInstance * hero, const CCreatureSet * army) const
 {
 	if(!target)
@@ -1134,8 +1115,9 @@ public:
 		if (target)
 		{
 			evaluationContext.goldReward += evaluationContext.evaluator.getGoldReward(target, hero);
-			evaluationContext.armyReward += evaluationContext.evaluator.getArmyReward(target, hero, army, checkGold);
-			evaluationContext.experienceReward += evaluationContext.evaluator.getExperienceReward(target, hero, army);
+			auto currentArmyReward = evaluationContext.evaluator.getArmyReward(target, hero, army, checkGold);
+			evaluationContext.armyReward += currentArmyReward;
+			evaluationContext.experienceReward += currentArmyReward * 0.05f;
 			evaluationContext.armyGrowth += evaluationContext.evaluator.getArmyGrowth(target, hero, army);
 			evaluationContext.skillReward += evaluationContext.evaluator.getSkillReward(target, hero, heroRole);
 			evaluationContext.addNonCriticalStrategicalValue(evaluationContext.evaluator.getStrategicalValue(target));
@@ -1711,7 +1693,6 @@ float PriorityEvaluator::evaluate(
 				// workshop (free lvl 1 units for Tower) and similar dwellings receive both armyReward and armyGrowth in evaluationContext
 				// For that reason only getDwellingArmyGrowth gets amplified towards day 7 if units are lost after
 				// Hero exchange and army upgrade are using this too
-				score += evaluationContext.experienceReward;
 				score += evaluationContext.armyGrowth;
 
 				if(evaluationContext.goldCost > 0)
