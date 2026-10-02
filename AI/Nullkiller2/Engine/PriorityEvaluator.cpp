@@ -77,6 +77,7 @@ EvaluationContext::EvaluationContext(const Nullkiller* aiNk)
 	goldReward(0),
 	goldCost(0),
 	armyReward(0),
+	experienceReward(0),
 	armyLossRatio(0),
 	heroRole(HeroRole::SCOUT),
 	turn(0),
@@ -318,21 +319,6 @@ uint64_t RewardEvaluator::getArmyReward(
 	return 0;
 }
 
-
-float RewardEvaluator::getExperienceReward(const CGObjectInstance * target) const
-{
-	if(!target || target->ID != Obj::MONSTER)
-		return 0;
-
-	auto creature = dynamic_cast<const CGCreature *>(target);
-	if(!creature)
-		return 0;
-
-	// Experience is only a strategic bonus. Use existing AI combat value
-	// instead of duplicating the game experience formula.
-	return creature->getCreatureSet()->estimateCombatValue() * 0.1f;
-}
-
 uint64_t RewardEvaluator::getArmyGrowth(
 	const CGObjectInstance * target,
 	const CGHeroInstance * hero,
@@ -371,6 +357,25 @@ uint64_t RewardEvaluator::getArmyGrowth(
 	default:
 		return 0;
 	}
+}
+
+
+float RewardEvaluator::getExperienceReward(const CGObjectInstance * target, const CGHeroInstance * hero, const CCreatureSet * army) const
+{
+	// Experience is an additional strategic reward only.
+	// Army strength, danger and loss evaluation remain unchanged.
+	if(!target || !hero || !army)
+		return 0;
+
+	auto creature = dynamic_cast<const CGCreature *>(target);
+	if(!creature)
+		return 0;
+
+	const auto combatValue = creature->getCreatureSet()->estimateCombatValue();
+	if(combatValue <= 0)
+		return 0;
+
+	return static_cast<float>(combatValue) * 0.05f;
 }
 
 int RewardEvaluator::getGoldCost(const CGObjectInstance * target, const CGHeroInstance * hero, const CCreatureSet * army) const
@@ -1130,7 +1135,7 @@ public:
 		{
 			evaluationContext.goldReward += evaluationContext.evaluator.getGoldReward(target, hero);
 			evaluationContext.armyReward += evaluationContext.evaluator.getArmyReward(target, hero, army, checkGold);
-			evaluationContext.experienceReward += evaluationContext.evaluator.getExperienceReward(target);
+			evaluationContext.experienceReward += evaluationContext.evaluator.getExperienceReward(target, hero, army);
 			evaluationContext.armyGrowth += evaluationContext.evaluator.getArmyGrowth(target, hero, army);
 			evaluationContext.skillReward += evaluationContext.evaluator.getSkillReward(target, hero, heroRole);
 			evaluationContext.addNonCriticalStrategicalValue(evaluationContext.evaluator.getStrategicalValue(target));
@@ -1495,7 +1500,7 @@ float PriorityEvaluator::evaluate(
 #if NK2AI_TRACE_LEVEL >= 2
 		logAi->trace(
 			"BEFORE: priorityTier %d, Evaluated %s, armyLossRatio: %f, maxWillingToLose: %f, turn: %d, turns main: %f, scout: %f, armyInvolvement: %f, "
-			"goldReward: %f, goldCost: %d, armyReward: %f, experienceReward: %f, armyGrowth: %f, skillReward: %f, danger: %d, threatTurns: %d, threat: %d, "
+			"goldReward: %f, goldCost: %d, armyReward: %f, armyGrowth: %f, skillReward: %f, danger: %d, threatTurns: %d, threat: %d, "
 			"heroRole: %s, strategicalValue: %f, conquestValue: %f, buildingCost.marketValue: %f, closestWayRatio: %f, enemyHeroDangerRatio: %f, "
 			"maxEnemyDangerRatio: %f, explorePriority: %d, isDefend: %d, isEnemy: %d, arriveNextWeek: %d, powerRatio: %f",
 			priorityTier,
@@ -1509,7 +1514,6 @@ float PriorityEvaluator::evaluate(
 			evaluationContext.goldReward,
 			evaluationContext.goldCost,
 			evaluationContext.armyReward,
-			evaluationContext.experienceReward,
 			evaluationContext.armyGrowth,
 			evaluationContext.skillReward,
 			evaluationContext.danger,
@@ -1707,6 +1711,7 @@ float PriorityEvaluator::evaluate(
 				// workshop (free lvl 1 units for Tower) and similar dwellings receive both armyReward and armyGrowth in evaluationContext
 				// For that reason only getDwellingArmyGrowth gets amplified towards day 7 if units are lost after
 				// Hero exchange and army upgrade are using this too
+				score += evaluationContext.experienceReward;
 				score += evaluationContext.armyGrowth;
 
 				if(evaluationContext.goldCost > 0)
@@ -1745,6 +1750,7 @@ float PriorityEvaluator::evaluate(
 				score += evaluationContext.goldReward;
 				score = evaluateSkillReward(score, evaluationContext.skillReward, evaluationContext.armyInvolvement, evaluationContext.armyLossRatio);
 				score += evaluationContext.armyReward;
+				score += evaluationContext.experienceReward;
 				score += evaluationContext.armyGrowth;
 
 				if(evaluationContext.buildingCost.marketValue() > 0)
@@ -1806,7 +1812,7 @@ float PriorityEvaluator::evaluate(
 #if NK2AI_TRACE_LEVEL >= 2
 	logAi->trace(
 		"priorityTier %d, Evaluated %s, armyLossRatio: %f, turn: %d, turns main: %f, turns scout: %f, armyInvolvement: %f, "
-		"goldReward: %f, goldCost: %d, armyReward: %f, experienceReward: %f, armyGrowth: %f, skillReward: %f, danger: %d, threatTurns: %d, threat: %d, "
+		"goldReward: %f, goldCost: %d, armyReward: %f, armyGrowth: %f, skillReward: %f, danger: %d, threatTurns: %d, threat: %d, "
 		"heroRole: %s, strategicalValue: %f, conquestValue: %f, buildingCost.marketValue: %f, closestWayRatio: %f, enemyHeroDangerRatio: %f, "
 		"explorePriority: %d, isDefend: %d, isEnemy: %d, powerRatio: %f, result %f",
 		priorityTier,
