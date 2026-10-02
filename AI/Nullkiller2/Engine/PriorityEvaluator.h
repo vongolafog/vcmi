@@ -30,7 +30,6 @@ public:
 
 	uint64_t getArmyReward(const CGObjectInstance * target, const CGHeroInstance * hero, const CCreatureSet * army, bool checkGold) const;
 	uint64_t getArmyGrowth(const CGObjectInstance * target, const CGHeroInstance * hero, const CCreatureSet * army) const;
-	float getExperienceReward(const CGObjectInstance * target, const CGHeroInstance * hero, const CCreatureSet * army) const;
 	int getGoldCost(const CGObjectInstance * target, const CGHeroInstance * hero, const CCreatureSet * army) const;
 	float getEnemyHeroStrategicalValue(const CGHeroInstance * enemy) const;
 	float getNowResourceRequirementStrength(GameResID resType) const;
